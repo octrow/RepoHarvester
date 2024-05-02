@@ -6,10 +6,11 @@ RepoHarvester is a Python utility designed to clone a GitHub repository and comp
 ## Features
 - **Selective Cloning**: Clones the repository and excludes media files based on their extensions.
 - **Comment Removal**: Offers an option to remove comments from code files, supporting multiple programming languages.
+- **Flexible Exclusions**: Allows for fine-grained control over which types of files to exclude.
 - **Single File Output**: Compiles all text-based files into a single, well-organized text file.
 
 ## Installation
-Clone the RepoHarvester repository or download the `repoharvester.py` script. Ensure you have Python installed on your system.
+Clone the RepoHarvester repository or download the `repoharvester.py` script. Ensure you have Python and Git installed on your system.
 
 ## Usage
 Run the script using the following command:
@@ -23,25 +24,10 @@ python repoharvester.py <repo_url> [--remove]
 ### Arguments
 - `repo_url``: The SSH URL of the GitHub repository to clone.
 - `-r, --remove`: Remove comments from code files.
-- `--skip-media`: Skip media files.
-- `--skip-office`: Skip office files.
-- `--skip-system`: Skip system files.
-- `--skip-executables`: Skip executable files.
-- `--skip-archive`: Skip archive files.
-- `--skip-audio`: Skip audio files.
-- `--skip-video`: Skip video files.
-- `--skip-database`: Skip database files.
-- `--skip-font`: Skip font files.
-- `--skip-temporary`: Skip temporary files.
-- `--skip-compiled-code`: Skip compiled code files.
-- `--skip-certificate`: Skip certificate files.
-- `--skip-configuration`: Skip configuration files.
-- `--skip-virtual-env`: Skip virtual environment files.
-- `--skip-node-modules`: Skip node modules.
-- `--skip-python-bytecode`: Skip Python bytecode files.
-- `--skip-package-locks`: Skip package lock files.
-- `--skip-log-files`: Skip log files.
-- `--skip-cache-files`: Skip cache files.
+- `--skip-media`: Skip media files like images and audio.
+- `--skip-office`: Skip office files such as documents and spreadsheets.
+- `--skip-system`: Skip system-related files like logs and configurations.
+- Additional flags are available for skipping executables, archives, audio, video, databases, fonts, temporary files, compiled code, certificates, configuration files, virtual environments, node modules, Python bytecode, package locks, log files, and cache files.
 
 ### Example
 This command will clone the repository at git@github.com:username/repo.git, remove comments from code files, skip media files, and compile the remaining files into a single file named repo_all_files.txt:
@@ -49,11 +35,13 @@ This command will clone the repository at git@github.com:username/repo.git, remo
 python repoharvester.py git@github.com:username/repo.git --remove --skip-media
 ```
 
-
-## File Types Supported
+## Excluded File Types
+By default, RepoHarvester excludes a wide range of file types that are typically not necessary for textual analysis. This includes but is not limited to:
 The script excludes the following media file extensions by default:
-
-png, jpg, jpeg, gif, bmp, tiff, svg, xlsx, xls, pack, idx, log, DS_Store
+- Media files: png, jpg, jpeg, gif, bmp, tiff, svg, ico, raw, psd, ai
+- Office documents: xlsx, xls, docx, pptx, pdf
+- System files: pack, idx, log, DS_Store, sys, ini, bat, plist
+- And many more…
 
 ## Comment Patterns
 The comment_patterns.py file contains regular expressions used to identify and remove comments from various programming languages:
