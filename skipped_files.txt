@@ -1,0 +1,14 @@
+api_based_engine_horizontal.png
+photo_2024-02-06_17-05-18.jpg
+Current_architecture_horizontal.png
+daemon_based_engine.png
+api_based_engine.png
+cybernet_new_infra.png
+logo.png
+sample_test_script_nlu01.xlsx
+kz_16_sec.wav
+rus_30_sec.wav
+kz_10_sec.wav
+kz_5_sec.wav
+cybernet
+no_sound.wav

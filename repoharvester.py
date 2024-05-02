@@ -55,22 +55,34 @@ def remove_comments(content, file_extension):
     return content
 
 def write_to_union_file(file_list, repo_name, remove_comments_flag):
-    """Write the files into a single text file with a consistent naming convention."""
     output_dir = 'output'
+    skipped_files = 'skipped_files.txt'
     os.makedirs(output_dir, exist_ok=True)
     union_filename = f'{output_dir}/{repo_name}_all_files.txt'
-    with open(union_filename, 'w', encoding='utf-8') as union_file:
+
+    with open(union_filename, 'w', encoding='utf-8') as union_file, \
+         open(skipped_files, 'w', encoding='utf-8') as skipped_file:
+
         union_file.write(f'## {repo_name}\n')
+
         for file_path in file_list:
             filename = os.path.basename(file_path)
             file_extension = filename.split('.')[-1]
-            union_file.write(f'### {filename}\n')
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
-                content = file.read()
-                if remove_comments_flag:
-                    content = remove_comments(content, file_extension)
-                union_file.write(content)
-                union_file.write('\n### end of file\n')
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+
+                    if remove_comments_flag:
+                        content = remove_comments(content, file_extension)
+
+                    union_file.write(f'### {filename}\n')
+                    union_file.write(content)
+                    union_file.write('\n### end of file\n')
+            except UnicodeDecodeError:
+                print(f"Skipping non-UTF-8 file: {filename}")  # Log skipped file
+                skipped_file.write(f"{filename}\n")  # Write skipped file name to file
+
     return union_filename
 
 def main():
