@@ -27,33 +27,7 @@ EXTENSION_GROUPS = {
     'log_files': {'err', 'stderr', 'stdout', 'log',},
     'cache_files': {'cache', 'cached'}
 }
-# # Define groups of file extensions
-# MEDIA_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'ico', 'raw', 'psd', 'ai'}
-# OFFICE_EXTENSIONS = {'xlsx', 'xls', 'docx', 'pptx', 'pdf'}
-# SYSTEM_EXTENSIONS = {'pack', 'idx', 'DS_Store', 'sys', 'ini', 'bat', 'plist'}
-# EXECUTABLE_EXTENSIONS = {'exe', 'dll', 'so', 'bin'}
-# ARCHIVE_EXTENSIONS = {'zip', 'rar', '7z', 'tar', 'gz', 'bz2'}
-# AUDIO_EXTENSIONS = {'mp3', 'wav', 'aac', 'flac'}
-# VIDEO_EXTENSIONS = {'mp4', 'avi', 'mov', 'wmv', 'flv'}
-# DATABASE_EXTENSIONS = {'db', 'sqlitedb', 'mdb'}
-# FONT_EXTENSIONS = {'ttf', 'otf', 'woff', 'woff2'}
-# TEMPORARY_EXTENSIONS = {'tmp', 'temp', 'swp', 'swo'}
-# COMPILED_CODE_EXTENSIONS = {'o', 'obj', 'pyc', 'class'}
-# CERTIFICATE_EXTENSIONS = {'cer', 'pem', 'crt', 'key'}
-# CONFIGURATION_EXTENSIONS = {'conf', 'cfg', 'config'}
-# VIRTUAL_ENV_EXTENSIONS = {'venv', 'env'}
-# NODE_MODULES = {'node_modules'}
-# PYTHON_BYTECODE = {'pyo'}
-# PACKAGE_LOCKS = {'package-lock.json', 'yarn.lock', 'Gemfile.lock'}
-# LOG_FILES = {'err', 'stderr', 'stdout', 'log',}
-# CACHE_FILES = {'cache', 'cached'}
-#
-# # Combine all extensions into a single set for exclusion
-# ALL_EXTENSIONS = (MEDIA_EXTENSIONS | OFFICE_EXTENSIONS | SYSTEM_EXTENSIONS | EXECUTABLE_EXTENSIONS |
-#                   ARCHIVE_EXTENSIONS | AUDIO_EXTENSIONS | VIDEO_EXTENSIONS | DATABASE_EXTENSIONS |
-#                   FONT_EXTENSIONS | TEMPORARY_EXTENSIONS | COMPILED_CODE_EXTENSIONS | CERTIFICATE_EXTENSIONS |
-#                   CONFIGURATION_EXTENSIONS | VIRTUAL_ENV_EXTENSIONS | NODE_MODULES | PYTHON_BYTECODE |
-#                   PACKAGE_LOCKS | LOG_FILES | CACHE_FILES)
+
 
 def get_repo_name(repo_url):
     """Extract the repository name from the URL."""
