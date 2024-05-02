@@ -56,7 +56,9 @@ def remove_comments(content, file_extension):
 
 def write_to_union_file(file_list, repo_name, remove_comments_flag):
     """Write the files into a single text file with a consistent naming convention."""
-    union_filename = f'{repo_name}_all_files.txt'
+    output_dir = 'output'
+    os.makedirs(output_dir, exist_ok=True)
+    union_filename = f'{output_dir}/{repo_name}_all_files.txt'
     with open(union_filename, 'w', encoding='utf-8') as union_file:
         union_file.write(f'## {repo_name}\n')
         for file_path in file_list:
