@@ -37,13 +37,20 @@ def clone_repository(repo_url, temp_dir):
     """Clone the repository into a temporary directory."""
     subprocess.run(['git', 'clone', repo_url, temp_dir], check=True)
 
-def get_file_list(temp_dir, excluded_extensions):
+def get_file_list(temp_dir, excluded_extensions, max_size):
     """Walk the directory tree to get the list of files excluding certain extensions, .git, and .github directories."""
     file_list = []
     for root, dirs, files in os.walk(temp_dir):
         dirs[:] = [d for d in dirs if d not in {'.git', '.github'}]  # Skip the .git and .github directories
         for file in files:
             if file.split('.')[-1] not in excluded_extensions:
+                file_path = os.path.join(root, file)
+                file_size_kb = os.path.getsize(file_path) / 1024
+                if file_size_kb > max_size:
+                    print(f"Skipping file larger than {max_size} KB: {file}, size: {file_size_kb} KB")
+                    continue
+                elif file_size_kb > 500:
+                    print(f"File larger than 500 KB: {file}, size: {file_size_kb} KB")
                 file_list.append(os.path.join(root, file))
     return file_list
 
@@ -90,22 +97,26 @@ def main():
     parser = argparse.ArgumentParser(description='Clone a repo and compile its contents into a single file.')
     parser.add_argument('repo_url', type=str, help='GitHub repository URL (SSH)')
     parser.add_argument('-r', '--remove', action='store_true', help='Remove comments from code files')
-    parser.add_argument('--skip', nargs='+', help='Skip files of certain types')
+    parser.add_argument('--no-skip', nargs='+', help='Do not skip files of these types')
+    parser.add_argument('--max-size', type=int, default=1000, help='Maximum file size in KB')
     args = parser.parse_args()
 
+    # Start by excluding all extensions
     excluded_extensions = set()
+    for extensions in EXTENSION_GROUPS.values():
+        excluded_extensions.update(extensions)
 
-    # Build the set of excluded extensions based on the selected categories
-    if args.skip:
-        for group in args.skip:
+    # Remove excluded groups if specified in --no-skip
+    if args.no_skip:
+        for group in args.no_skip:
             if group in EXTENSION_GROUPS:
-                excluded_extensions |= EXTENSION_GROUPS[group]
+                excluded_extensions -= EXTENSION_GROUPS[group]
 
     repo_name = get_repo_name(args.repo_url)
     temp_dir = f'tmp_{repo_name}'
     try:
         clone_repository(args.repo_url, temp_dir)
-        file_list = get_file_list(temp_dir, excluded_extensions)
+        file_list = get_file_list(temp_dir, excluded_extensions, args.max_size)
         union_filename = write_to_union_file(file_list, repo_name, args.remove)
         print(f'All files have been written to {union_filename}')
     finally:
