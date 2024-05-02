@@ -9,7 +9,7 @@ from comment_pattens import COMMENT_PATTERNS
 # Define groups of file extensions
 MEDIA_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'ico', 'raw', 'psd', 'ai'}
 OFFICE_EXTENSIONS = {'xlsx', 'xls', 'docx', 'pptx', 'pdf'}
-SYSTEM_EXTENSIONS = {'pack', 'idx', 'log', 'DS_Store', 'sys', 'ini', 'bat', 'plist'}
+SYSTEM_EXTENSIONS = {'pack', 'idx', 'DS_Store', 'sys', 'ini', 'bat', 'plist'}
 EXECUTABLE_EXTENSIONS = {'exe', 'dll', 'so', 'bin'}
 ARCHIVE_EXTENSIONS = {'zip', 'rar', '7z', 'tar', 'gz', 'bz2'}
 AUDIO_EXTENSIONS = {'mp3', 'wav', 'aac', 'flac'}
@@ -24,7 +24,7 @@ VIRTUAL_ENV_EXTENSIONS = {'venv', 'env'}
 NODE_MODULES = {'node_modules'}
 PYTHON_BYTECODE = {'pyo'}
 PACKAGE_LOCKS = {'package-lock.json', 'yarn.lock', 'Gemfile.lock'}
-LOG_FILES = {'err', 'stderr', 'stdout'}
+LOG_FILES = {'err', 'stderr', 'stdout', 'log',}
 CACHE_FILES = {'cache', 'cached'}
 
 # Combine all extensions into a single set for exclusion
