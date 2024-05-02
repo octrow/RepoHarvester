@@ -22,7 +22,8 @@ Run the script using the following command:
 ```shell
 python repoharvester.py <repo_url> [-r|--remove] [--no-skip <group1> <group2> ...] [--max-size <size_in_kb>] 
 ```
-- `<repo_url>`: (Required): The SSH URL of the GitHub repository to clone.
+
+- `<repo_url>` : (Required): The SSH URL of the GitHub repository to clone.
 - `--remove` \ `-r` (optional): Removes comments from supported code files.
 - `--no-skip` (optional): Includes specified file groups that would otherwise be excluded.
 - - Available groups can be found in the "Default Excluded File Types" section.
