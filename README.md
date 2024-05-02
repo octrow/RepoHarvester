@@ -16,23 +16,20 @@ Clone the RepoHarvester repository or download the `repoharvester.py` script. En
 Run the script using the following command:
 
 ```shell
-python repoharvester.py <repo_url> [--remove]
+python repoharvester.py <repo_url> [--remove] [--skip]
 ```
 - <repo_url>: The SSH URL of the GitHub repository.
 - `--remove` \ `-r` (optional): Include this flag if you want to remove comments from the code files.
+- `--skip` (optional): Include this flag followed by the types of files you want to skip.
 
 ### Arguments
 - `repo_url``: The SSH URL of the GitHub repository to clone.
-- `-r, --remove`: Remove comments from code files.
-- `--skip-media`: Skip media files like images and audio.
-- `--skip-office`: Skip office files such as documents and spreadsheets.
-- `--skip-system`: Skip system-related files like logs and configurations.
-- Additional flags are available for skipping executables, archives, audio, video, databases, fonts, temporary files, compiled code, certificates, configuration files, virtual environments, node modules, Python bytecode, package locks, log files, and cache files.
-
+- `-r, --remove`: Remove comments from code files office files.
+- `--skip`: Skip files of certain types. You can specify multiple types separated by spaces. Available types are: media, office, system, executables, archive, audio, video, database, font, temporary, compiled_code, certificate, configuration, virtual_env, node_modules, python_bytecode, package_locks, log_files, cache_files.
 ### Example
-This command will clone the repository at git@github.com:username/repo.git, remove comments from code files, skip media files, and compile the remaining files into a single file named repo_all_files.txt:
+This command will clone the repository at git@github.com:username/repo.git, remove comments from code files, skip media and office files, and compile the remaining files into a single file named repo_all_files.txt:
 ```bash
-python repoharvester.py git@github.com:username/repo.git --remove --skip-media
+python repoharvester.py git@github.com:username/repo.git --remove --skip media office
 ```
 
 ## Excluded File Types
