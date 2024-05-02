@@ -18,7 +18,7 @@ Run the script using a Python interpreter:
 python repoharvester.py
 \```
 
-When prompted, enter the full URL of the GitHub repository you wish to download files from. The script will perform the following actions:
+When prompted, enter the full URL (SSH) of the GitHub repository you wish to download files from. The script will perform the following actions:
 - Clone the repository to a temporary directory.
 - Filter out and exclude media files.
 - Compile the content of the remaining files into a single text file named `union file: <repo_name> + alltogether.txt`.
@@ -26,12 +26,12 @@ When prompted, enter the full URL of the GitHub repository you wish to download 
 ## Output Format
 The generated text file will have the following structure:
 
-\```
+```
 ## <name_of_repository>
 ### <filename>.<file_extension>
 <content_of_the_file>
 ### end of file
-\```
+```
 
 This pattern repeats for each file downloaded from the repository.
 
