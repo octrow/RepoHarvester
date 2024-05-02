@@ -4,13 +4,10 @@ import re
 import shutil
 import subprocess
 
+from comment_pattens import COMMENT_PATTERNS
+
 EXCLUDED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'xlsx', 'xls', 'pack', 'idx', 'log', 'DS_Store'}
-COMMENT_PATTERNS = {
-    'py': r'#.*',
-    'js': r'//.*',
-    'html': r'<!--.*?-->',
-    # Add more patterns for different file types as needed
-}
+
 
 def get_repo_name(repo_url):
     """Extract the repository name from the URL."""
