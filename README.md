@@ -10,25 +10,29 @@ RepoHarvester is a Python utility designed to clone a GitHub repository and comp
 - **Maximum File Size Control**: Implements size restrictions for included files:
 - - Files larger than a specified threshold (`--max-size`) are automatically skipped.
 - - Files exceeding 500KB but smaller than the maximum size are logged for awareness.
+- **Folder Exclusion**: Exclude specific folders and their contents using the --exclude option.
 - **Single File Output**: Compiles relevant files into a unified, well-structured text file.
+- **Logging**: Detailed logs, including file processing information, are saved to the specified log file (--log option).
 
 ## Installation
-1. Clone the RepoHarvester repository or download the repoharvester.py script.
-2. Ensure you have Python (https://www.python.org/) and Git (https://git-scm.com/) installed.
+1. Ensure you have Python (https://www.python.org/) and Git (https://git-scm.com/) installed.
+2. Clone the RepoHarvester repository or download the repoharvester.py and comment_pattens.py.
+
 
 ## Usage
 Run the script using the following command:
 
 ```shell
-python repoharvester.py <repo_url> [-r|--remove] [--no-skip <group1> <group2> ...] [--max-size <size_in_kb>] 
+python repoharvester.py <repo_url> [options]
 ```
 
 - `repo_url` : (Required): The SSH URL of the GitHub repository to clone.
-- `--remove` \ `-r` (optional): Removes comments from supported code files.
-- `--no-skip` (optional): Includes specified file groups that would otherwise be excluded.
-- - Available groups can be found in the "Default Excluded File Types" section.
-- `--max-size` (Optional): Sets the maximum allowed file size in kilobytes (KB). Files exceeding this size are skipped. Files larger than 500KB but within the limit are logged. The default maximum size is 1000KB.
-
+- `--remove` \ `-r` (Optional): Removes comments from supported code files.
+- `--no-skip` (Optional): Includes specified file groups that would otherwise be excluded.
+- - **Available groups**: media, office, system, executables, archive, audio, video, database, font, temporary, compiled_code, certificate, configuration, virtual_env, node_modules, python_bytecode, package_locks, log_files, cache_files
+- `--max-size` (Optional):  Set the maximum file size in KB (default: 1000 KB). **Files exceeding this size are skipped**. Files larger than 500KB but within the limit are logged.
+- `--log` (Optional): Path to the log file (default: output/union_file.log)
+- `--exclude`(Optional): Specify folders to exclude (and their contents).
 ### Arguments
 - `repo_url``: The SSH URL of the GitHub repository to clone.
 - `-r, --remove`: Remove comments from code files office files.
@@ -39,9 +43,10 @@ This command:
 - Removes comments from code files.
 - Includes media and office files.
 - Sets the maximum allowed file size to 250KB.
+- Exclude folder `vendor`
 
 ```bash
-python repoharvester.py git@github.com:username/repo.git --remove --no-skip media office --max-size 250
+python repoharvester.py git@github.com:username/repo.git --remove --no-skip media office --max-size 250 --exclude vendor
 ```
 
 ## Default Excluded File Types
@@ -70,7 +75,7 @@ COMMENT_PATTERNS = {
 
 ```
 
-## Output Format
+### Output Format
 The generated text file will have the following structure:
 ```
 ## <name_of_repository>
@@ -79,8 +84,12 @@ The generated text file will have the following structure:
 ### end of file
 ...
 ```
+### Additional Notes:
+- non-UTF-8 files are skipped and logged.
+- A list of skipped files is saved to `output/skipped_files.txt`.
+- The `--exclude` option allows for more granular control over which files are included.
 
-## Contributing
+### Contributing
 Contributions to RepoHarvester are welcome! Please read our contributing guidelines to get started.
 
 ## License

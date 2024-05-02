@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import re
 import shutil
@@ -37,11 +38,11 @@ def clone_repository(repo_url, temp_dir):
     """Clone the repository into a temporary directory."""
     subprocess.run(['git', 'clone', repo_url, temp_dir], check=True)
 
-def get_file_list(temp_dir, excluded_extensions, max_size):
+def get_file_list(temp_dir, excluded_extensions, max_size, excluded_folders):
     """Walk the directory tree to get the list of files excluding certain extensions, .git, and .github directories."""
     file_list = []
-    for root, dirs, files in os.walk(temp_dir):
-        dirs[:] = [d for d in dirs if d not in {'.git', '.github'}]  # Skip the .git and .github directories
+    for root, dirs, files in os.walk(temp_dir, topdown=True):
+        dirs[:] = [d for d in dirs if d not in {'.git', '.github'} and d not in excluded_folders]  # Skip the .git and .github directories
         for file in files:
             if file.split('.')[-1] not in excluded_extensions:
                 file_path = os.path.join(root, file)
@@ -61,7 +62,7 @@ def remove_comments(content, file_extension):
         content = re.sub(pattern, '', content, flags=re.MULTILINE)
     return content
 
-def write_to_union_file(file_list, repo_name, remove_comments_flag):
+def write_to_union_file(file_list, repo_name, remove_comments_flag, log_file):
     output_dir = 'output'
     skipped_files = f'{output_dir}/skipped_files.txt'
     os.makedirs(output_dir, exist_ok=True)
@@ -75,6 +76,7 @@ def write_to_union_file(file_list, repo_name, remove_comments_flag):
         for file_path in file_list:
             filename = os.path.basename(file_path)
             file_extension = filename.split('.')[-1]
+            file_size = os.path.getsize(file_path) / 1024  # Calculate file size in KB
 
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
@@ -86,6 +88,8 @@ def write_to_union_file(file_list, repo_name, remove_comments_flag):
                     union_file.write(f'### {filename}\n')
                     union_file.write(content)
                     union_file.write('\n### end of file\n')
+
+                    logging.info(f"{filename}, size: {file_size:.2f} KB")
             except UnicodeDecodeError:
                 print(f"Skipping non-UTF-8 file: {filename}")  # Log skipped file
                 skipped_file.write(f"{filename}\n")  # Write skipped file name to file
@@ -99,7 +103,13 @@ def main():
     parser.add_argument('-r', '--remove', action='store_true', help='Remove comments from code files')
     parser.add_argument('--no-skip', nargs='+', help='Do not skip files of these types')
     parser.add_argument('--max-size', type=int, default=1000, help='Maximum file size in KB')
+    parser.add_argument('--log', type=str, default='output/union_file.log', help='Path to log file')
+    parser.add_argument('--exclude', nargs='+', default=[], help='Exclude these folders (and their contents)')
     args = parser.parse_args()
+
+    # Configure logging
+    logging.basicConfig(filename=args.log, level=logging.INFO,
+                        format='%(message)s')
 
     # Start by excluding all extensions
     excluded_extensions = set()
@@ -116,8 +126,8 @@ def main():
     temp_dir = f'tmp_{repo_name}'
     try:
         clone_repository(args.repo_url, temp_dir)
-        file_list = get_file_list(temp_dir, excluded_extensions, args.max_size)
-        union_filename = write_to_union_file(file_list, repo_name, args.remove)
+        file_list = get_file_list(temp_dir, excluded_extensions, args.max_size, args.exclude)
+        union_filename = write_to_union_file(file_list, repo_name, args.remove, args.log)
         print(f'All files have been written to {union_filename}')
     finally:
         try:
