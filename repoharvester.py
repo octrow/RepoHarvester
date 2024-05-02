@@ -56,7 +56,7 @@ def remove_comments(content, file_extension):
 
 def write_to_union_file(file_list, repo_name, remove_comments_flag):
     output_dir = 'output'
-    skipped_files = 'skipped_files.txt'
+    skipped_files = f'{output_dir}/skipped_files.txt'
     os.makedirs(output_dir, exist_ok=True)
     union_filename = f'{output_dir}/{repo_name}_all_files.txt'
 
