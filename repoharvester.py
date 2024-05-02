@@ -59,7 +59,7 @@ import os
 import shutil
 import subprocess
 
-EXCLUDED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'xlsx', 'xls', 'pack', 'idx', 'log'}
+EXCLUDED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'xlsx', 'xls', 'pack', 'idx', 'log', 'DS_Store'}
 
 def get_repo_name(repo_url):
     """Extract the repository name from the URL."""
@@ -70,9 +70,11 @@ def clone_repository(repo_url, temp_dir):
     subprocess.run(['git', 'clone', repo_url, temp_dir], check=True)
 
 def get_file_list(temp_dir):
-    """Walk the directory tree to get the list of files excluding certain extensions."""
+    """Walk the directory tree to get the list of files excluding certain extensions, .git, and .github directories."""
     file_list = []
     for root, dirs, files in os.walk(temp_dir):
+        # Skip the .git and .github directories
+        dirs[:] = [d for d in dirs if d not in {'.git', '.github'}]
         for file in files:
             if file.split('.')[-1] not in EXCLUDED_EXTENSIONS:
                 file_list.append(os.path.join(root, file))
