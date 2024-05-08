@@ -96,7 +96,7 @@ def write_to_union_file(file_list, repo_name, remove_comments_flag, log_file):
 
     return union_filename
 
-def main():
+def main(repo_url, remove_comments, excluded_extensions, max_size, exclude_folders):
     """Main function to execute the script."""
     parser = argparse.ArgumentParser(description='Clone a repo and compile its contents into a single file.')
     parser.add_argument('repo_url', type=str, help='GitHub repository URL (SSH)')
