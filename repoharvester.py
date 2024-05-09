@@ -57,7 +57,7 @@ class RepoHarvester:
                     file_list.append(os.path.join(root, file))
         return file_list
 
-    def _remove_comments(content, file_extension):
+    def _remove_comments(self, content, file_extension):
         """Remove comments from the content based on the file extension."""
         pattern = COMMENT_PATTERNS.get(file_extension)
         if pattern:
