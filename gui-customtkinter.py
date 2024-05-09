@@ -1,8 +1,8 @@
 import customtkinter as ctk
 from tkinter import filedialog  # For file dialog
-from repoharvester import EXTENSION_GROUPS, main  # Import from your repoharvester script
 import threading
 
+from repoharvester import RepoHarvester
 
 
 class RepoHarvesterGUI:
@@ -117,13 +117,13 @@ class RepoHarvesterGUI:
         max_size = self.max_size_entry.get()
         exclude_folders = self.exclude_folders_entry.get().replace(" ", "").split(",")
         # ... (Other processing logic)
-
+        harvester = RepoHarvester()
 
         # Get included/excluded file types
         excluded_extensions = set()
         for group_name, var in self.file_type_vars.items():
             if not var.get():  # If checkbox is unchecked
-                excluded_extensions.update(EXTENSION_GROUPS[group_name])
+                excluded_extensions.update(harvester.EXTENSION_GROUPS[group_name])
 
         # Get custom extensions (if entered)
         custom_exts = self.custom_ext_entry.get().replace(" ", "").split(",")
@@ -137,12 +137,12 @@ class RepoHarvesterGUI:
         # Create and start a thread for the harvesting process
         thread = threading.Thread(target=self.harvesting_thread, args=(repo_url, remove_comments,
                                                                        excluded_extensions, max_size,
-                                                                       exclude_folders))
+                                                                       exclude_folders, harvester))
         thread.start()
 
-    def harvesting_thread(self, repo_url, remove_comments, excluded_extensions, max_size, exclude_folders):
+    def harvesting_thread(self, repo_url, remove_comments, excluded_extensions, max_size, exclude_folders, harvester):
         try:
-            main(repo_url, remove_comments, excluded_extensions, max_size, exclude_folders)
+            harvester.run_from_gui(repo_url, remove_comments, excluded_extensions, max_size, exclude_folders)
             self.status_text.insert("end", "Harvesting completed successfully!\n")
         except Exception as e:
             self.status_text.insert("end", f"An error occurred: {e}\n")
