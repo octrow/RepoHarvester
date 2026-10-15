@@ -18,7 +18,7 @@ Clone a git repository (or point at a local folder) and compile all of its text 
 Requires Python 3.12+ and git.
 
 ```shell
-uv tool install git+https://github.com/octrow/RepoHarvester   # or: uv run repoharvester ... from a clone
+uv tool install repoharvester   # or: pipx install repoharvester / uv run repoharvester ... from a clone
 ```
 
 ## Usage
