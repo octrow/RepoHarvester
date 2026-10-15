@@ -1,159 +1,198 @@
+"""Clone a git repository (or read a local folder) and compile its text files into one file."""
 import argparse
 import logging
-import os
 import re
-import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 
-from comment_pattens import COMMENT_PATTERNS
+log = logging.getLogger("repoharvester")
 
-class RepoHarvester:
-    def __init__(self):
-        self.EXTENSION_GROUPS = {
-        'media': {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'ico', 'raw', 'psd', 'ai'},
-        'office': {'xlsx', 'xls', 'docx', 'pptx', 'pdf'},
-        'system': {'pack', 'idx', 'DS_Store', 'sys', 'ini', 'bat', 'plist'},
-        'executables': {'exe', 'dll', 'so', 'bin'},
-        'archive': {'zip', 'rar', '7z', 'tar', 'gz', 'bz2'},
-        'audio': {'mp3', 'wav', 'aac', 'flac'},
-        'video': {'mp4', 'avi', 'mov', 'wmv', 'flv'},
-        'database': {'db', 'sqlitedb', 'mdb'},
-        'font': {'ttf', 'otf', 'woff', 'woff2'},
-        'temporary': {'tmp', 'temp', 'swp', 'swo'},
-        'compiled_code': {'o', 'obj', 'pyc', 'class'},
-        'certificate': {'cer', 'pem', 'crt', 'key'},
-        'configuration': {'conf', 'cfg', 'config'},
-        'virtual_env': {'venv', 'env'},
-        'node_modules': {'node_modules'},
-        'python_bytecode': {'pyo'},
-        'package_locks': {'package-lock.json', 'yarn.lock', 'Gemfile.lock'},
-        'log_files': {'err', 'stderr', 'stdout', 'log',},
-        'cache_files': {'cache', 'cached'}
-    }
+DEFAULT_MAX_SIZE_KB = 1000
+LARGE_FILE_KB = 500
+DEFAULT_OUTPUT_DIR = Path("output")
 
-    def _get_repo_name(self, repo_url):
-        """Extract the repository name from the URL."""
-        return repo_url.strip().split('/')[-1].replace('.git', '')
+# Matched against lowercased file extensions.
+EXTENSION_GROUPS = {
+    'media': {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'ico', 'raw', 'psd', 'ai', 'webp'},
+    'office': {'xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt', 'pdf'},
+    'system': {'pack', 'idx', 'ds_store', 'sys', 'ini', 'bat', 'plist'},
+    'executables': {'exe', 'dll', 'so', 'bin', 'dylib'},
+    'archive': {'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'},
+    'audio': {'mp3', 'wav', 'aac', 'flac', 'ogg'},
+    'video': {'mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm'},
+    'database': {'db', 'sqlite', 'sqlite3', 'sqlitedb', 'mdb'},
+    'font': {'ttf', 'otf', 'woff', 'woff2', 'eot'},
+    'temporary': {'tmp', 'temp', 'swp', 'swo'},
+    'compiled_code': {'o', 'obj', 'pyc', 'pyo', 'class', 'jar'},
+    'certificate': {'cer', 'pem', 'crt', 'key'},
+    'configuration': {'conf', 'cfg', 'config'},
+    'log_files': {'err', 'stderr', 'stdout', 'log'},
+    'cache_files': {'cache', 'cached'},
+}
+# Matched against exact file names.
+FILENAME_GROUPS = {
+    'package_locks': {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Gemfile.lock',
+                      'poetry.lock', 'uv.lock', 'Cargo.lock', 'composer.lock'},
+}
+# Matched against directory names; contents are never walked.
+FOLDER_GROUPS = {
+    'virtual_env': {'venv', '.venv', 'env'},
+    'node_modules': {'node_modules'},
+    'cache_files': {'__pycache__', '.mypy_cache', '.pytest_cache', '.ruff_cache'},
+}
+ALWAYS_SKIPPED_FOLDERS = {'.git', '.github'}
+ALL_GROUPS = sorted(EXTENSION_GROUPS.keys() | FILENAME_GROUPS.keys() | FOLDER_GROUPS.keys())
+
+# Each pattern: group 1 = a string literal (kept), group 2 = a comment (removed).
+# Matching strings first keeps "http://x" or "#fff" inside strings intact.
+_STR = r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\''
+_C = rf'({_STR}|`(?:\\.|[^`\\])*`)|(//.*|/\*[\s\S]*?\*/)'
+_HASH_COMMENT = r'(?<!\S)#.*'  # '#' only at line start or after whitespace: keeps ${#a}, url#frag
+_HASH = rf'({_STR})|({_HASH_COMMENT})'
+_PY = rf'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|{_STR})|({_HASH_COMMENT})'
+_SQL = rf'({_STR})|(--.*|/\*[\s\S]*?\*/)'
+_LUA = rf'(\[(=*)\[[\s\S]*?\]\2\]|{_STR})|(--\[(=*)\[[\s\S]*?\]\4\]|--.*)'
+_CSS = rf'({_STR})|(/\*[\s\S]*?\*/)'
+_XML = r'()(<!--[\s\S]*?-->)'
+COMMENT_PATTERNS = {
+    **dict.fromkeys(['js', 'jsx', 'ts', 'tsx', 'java', 'c', 'h', 'cpp', 'hpp', 'cs',
+                     'go', 'swift', 'kt', 'rs'], _C),
+    **dict.fromkeys(['css', 'scss'], _CSS),
+    'php': rf'({_STR})|(//.*|/\*[\s\S]*?\*/|#.*)',
+    'py': _PY,
+    'lua': _LUA,
+    **dict.fromkeys(['rb', 'pl', 'r', 'sh', 'bash', 'zsh', 'yaml', 'yml', 'toml'], _HASH),
+    'sql': _SQL,
+    **dict.fromkeys(['html', 'xml', 'vue'], _XML),
+}
+_COMPILED = {ext: re.compile(p) for ext, p in COMMENT_PATTERNS.items()}
 
 
-    def _clone_repository(self, repo_url, temp_dir):
-        """Clone the repository into a temporary directory."""
-        subprocess.run(['git', 'clone', repo_url, temp_dir], check=True)
-
-    def _get_file_list(self, temp_dir, excluded_extensions, max_size, excluded_folders):
-        """Walk the directory tree to get the list of files excluding certain extensions, .git, and .github directories."""
-        file_list = []
-        for root, dirs, files in os.walk(temp_dir, topdown=True):
-            dirs[:] = [d for d in dirs if d not in {'.git', '.github'} and d not in excluded_folders]  # Skip the .git and .github directories
-            for file in files:
-                if file.split('.')[-1] not in excluded_extensions:
-                    file_path = os.path.join(root, file)
-                    file_size_kb = os.path.getsize(file_path) / 1024
-                    if file_size_kb > max_size:
-                        print(f"Skipping file larger than {max_size} KB: {file}, size: {file_size_kb} KB")
-                        continue
-                    elif file_size_kb > 500:
-                        print(f"File larger than 500 KB: {file}, size: {file_size_kb} KB")
-                    file_list.append(os.path.join(root, file))
-        return file_list
-
-    def _remove_comments(self, content, file_extension):
-        """Remove comments from the content based on the file extension."""
-        pattern = COMMENT_PATTERNS.get(file_extension)
-        if pattern:
-            content = re.sub(pattern, '', content, flags=re.MULTILINE)
+def remove_comments(content: str, extension: str) -> str:
+    """Strip comments for known languages; string literals are preserved."""
+    pattern = _COMPILED.get(extension.lower())
+    if not pattern:
         return content
+    return pattern.sub(lambda m: m.group(1) or '', content)
 
-    def _write_to_union_file(self, file_list, repo_name, remove_comments_flag, log_file):
-        output_dir = 'output'
-        skipped_files = f'{output_dir}/skipped_files.txt'
-        os.makedirs(output_dir, exist_ok=True)
-        union_filename = f'{output_dir}/{repo_name}_all_files.txt'
 
-        with open(union_filename, 'w', encoding='utf-8') as union_file, \
-             open(skipped_files, 'w', encoding='utf-8') as skipped_file:
+def get_repo_name(repo: str) -> str:
+    name = repo.strip().rstrip('/').split('/')[-1].split(':')[-1]
+    return name.removesuffix('.git') or 'repo'
 
-            union_file.write(f'## {repo_name}\n')
 
-            for file_path in file_list:
-                filename = os.path.basename(file_path)
-                file_extension = filename.split('.')[-1]
-                file_size = os.path.getsize(file_path) / 1024  # Calculate file size in KB
+def _members(table: dict[str, set[str]], groups: set[str]) -> set[str]:
+    return set().union(*(v for k, v in table.items() if k in groups))
 
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as file:
-                        content = file.read()
 
-                        if remove_comments_flag:
-                            content = self._remove_comments(content, file_extension)
+def collect_files(root: Path, skip_groups=None, exclude_folders=(), max_size_kb=DEFAULT_MAX_SIZE_KB):
+    """Return sorted files under root, honouring skip groups, excluded folders and size limit."""
+    groups = set(ALL_GROUPS if skip_groups is None else skip_groups)
+    skip_ext = _members(EXTENSION_GROUPS, groups)
+    skip_names = _members(FILENAME_GROUPS, groups)
+    skip_dirs = ALWAYS_SKIPPED_FOLDERS | set(exclude_folders) | _members(FOLDER_GROUPS, groups)
 
-                        union_file.write(f'### {filename}\n')
-                        union_file.write(content)
-                        union_file.write('\n### end of file\n')
+    files = []
+    for dirpath, dirnames, filenames in root.walk():
+        dirnames[:] = sorted(d for d in dirnames if d not in skip_dirs)
+        for name in sorted(filenames):
+            path = dirpath / name
+            ext = path.suffix.lstrip('.').lower()
+            if name in skip_names or ext in skip_ext or path.is_symlink():
+                continue
+            if _within_size(path, root, max_size_kb):
+                files.append(path)
+    return files
 
-                        logging.info(f"{filename}, size: {file_size:.2f} KB")
-                except UnicodeDecodeError:
-                    print(f"Skipping non-UTF-8 file: {filename}")  # Log skipped file
-                    skipped_file.write(f"{filename}\n")  # Write skipped file name to file
 
-        return union_filename
+def _within_size(path: Path, root: Path, max_size_kb: int) -> bool:
+    """True if path fits max_size_kb; logs skipped and large files."""
+    size_kb = path.stat().st_size / 1024
+    if size_kb > max_size_kb:
+        log.warning("Skipping %s: %.1f KB > %s KB", path.relative_to(root), size_kb, max_size_kb)
+        return False
+    if size_kb > LARGE_FILE_KB:
+        log.info("Large file %s: %.1f KB", path.relative_to(root), size_kb)
+    return True
 
-    def run_from_command_line(self):
-        parser = argparse.ArgumentParser(description='Clone a repo and compile its contents into a single file.')
-        parser.add_argument('repo_url', type=str, help='GitHub repository URL (SSH)')
-        parser.add_argument('-r', '--remove', action='store_true', help='Remove comments from code files')
-        parser.add_argument('--no-skip', nargs='+', help='Do not skip files of these types')
-        parser.add_argument('--max-size', type=int, default=1000, help='Maximum file size in KB')
-        parser.add_argument('--log', type=str, default='output/union_file.log', help='Path to log file')
-        parser.add_argument('--exclude', nargs='+', default=[], help='Exclude these folders (and their contents)')
-        args = parser.parse_args()
 
-        # Configure logging
-        logging.basicConfig(filename=args.log, level=logging.INFO,
-                            format='%(message)s')
-
-        # Start by excluding all extensions
-        excluded_extensions = set()
-        for extensions in self.EXTENSION_GROUPS.values():
-            excluded_extensions.update(extensions)
-
-        # Remove excluded groups if specified in --no-skip
-        if args.no_skip:
-            for group in args.no_skip:
-                if group in self.EXTENSION_GROUPS:
-                    excluded_extensions -= self.EXTENSION_GROUPS[group]
-
-        repo_name = self._get_repo_name(args.repo_url)
-        temp_dir = f'tmp_{repo_name}'
-        try:
-            self._clone_repository(args.repo_url, temp_dir)
-            file_list = self._get_file_list(temp_dir, excluded_extensions, args.max_size, args.exclude)
-            union_filename = self._write_to_union_file(file_list, repo_name, args.remove, args.log)
-            print(f'All files have been written to {union_filename}')
-        finally:
+def write_union_file(files, root: Path, out_file: Path, repo_name: str, strip_comments=False):
+    """Write files into out_file; return list of relative paths skipped as non-UTF-8."""
+    skipped = []
+    with out_file.open('w', encoding='utf-8') as out:
+        out.write(f'## {repo_name}\n')
+        for path in files:
+            rel = path.relative_to(root).as_posix()
             try:
-                shutil.rmtree(temp_dir)
-            except OSError as e:
-                print(f'Error: {e.strerror} - {e.filename}')
+                content = path.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                log.info("Skipping non-UTF-8 file: %s", rel)
+                skipped.append(rel)
+                continue
+            if strip_comments:
+                content = remove_comments(content, path.suffix.lstrip('.'))
+            out.write(f'### {rel}\n{content}\n### end of file\n')
+    return skipped
 
-    def run_from_gui(self, repo_url, remove_comments, excluded_extensions, max_size, exclude_folders, log_file_path='output/union_file.log'):
-            # Configure logging
-            logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(message)s')
 
-            repo_name = self._get_repo_name(repo_url)
-            temp_dir = f'tmp_{repo_name}'
-            try:
-                self._clone_repository(repo_url, temp_dir)
-                file_list = self._get_file_list(temp_dir, excluded_extensions, max_size, exclude_folders)
-                union_filename = self._write_to_union_file(file_list, repo_name, remove_comments, log_file_path)
-                print(f'All files have been written to {union_filename}')
-            finally:
-                try:
-                    shutil.rmtree(temp_dir)
-                except OSError as e:
-                    print(f'Error: {e.strerror} - {e.filename}')
+def harvest(repo: str, output_dir: Path = DEFAULT_OUTPUT_DIR, strip_comments=False, skip_groups=None,
+            exclude_folders=(), max_size_kb=DEFAULT_MAX_SIZE_KB) -> Path:
+    """Harvest a git URL or local folder into <output_dir>/<name>_all_files.txt and return its path."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    local = Path(repo).expanduser()
+    repo_name = local.resolve().name if local.is_dir() else get_repo_name(repo)
+    out_file = output_dir / f'{repo_name}_all_files.txt'
+
+    with tempfile.TemporaryDirectory(prefix='repoharvester_') as tmp:
+        if local.is_dir():
+            root = local
+        else:
+            root = Path(tmp)
+            log.info("Cloning %s", repo)
+            subprocess.run(['git', 'clone', '--depth', '1', repo, str(root)], check=True)
+        files = collect_files(root, skip_groups, exclude_folders, max_size_kb)
+        files = [f for f in files if not f.resolve().is_relative_to(output_dir.resolve())]
+        skipped = write_union_file(files, root, out_file, repo_name, strip_comments)
+
+    (output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in skipped), encoding='utf-8')
+    log.info("Wrote %d files to %s (%d non-UTF-8 skipped)", len(files) - len(skipped), out_file, len(skipped))
+    return out_file
+
+
+def _csv(value: str) -> list[str]:
+    return [v.strip() for v in value.split(',') if v.strip()]
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Clone a repo and compile its contents into a single file.')
+    parser.add_argument('repo', help='git URL (SSH or HTTPS) or path to a local folder')
+    parser.add_argument('-r', '--remove', action='store_true', help='remove comments from code files')
+    parser.add_argument('--no-skip', action='extend', type=_csv, default=[], metavar='GROUP[,GROUP]',
+                        help=f'include these normally skipped groups: {", ".join(ALL_GROUPS)}')
+    parser.add_argument('--max-size', type=int, default=DEFAULT_MAX_SIZE_KB, help='maximum file size in KB')
+    parser.add_argument('--exclude', action='extend', type=_csv, default=[], metavar='DIR[,DIR]',
+                        help='folder names to exclude (with contents); repeatable')
+    parser.add_argument('-o', '--output-dir', type=Path, default=DEFAULT_OUTPUT_DIR, help='output directory')
+    parser.add_argument('--log', type=Path, help='also write the log to this file')
+    args = parser.parse_args(argv)
+    if unknown := set(args.no_skip) - set(ALL_GROUPS):
+        parser.error(f'unknown group(s): {", ".join(sorted(unknown))}')
+
+    handlers = [logging.StreamHandler()]
+    if args.log:
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(args.log, encoding='utf-8'))
+    logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=handlers)
+
+    try:
+        out = harvest(args.repo, args.output_dir, args.remove, set(ALL_GROUPS) - set(args.no_skip),
+                      args.exclude, args.max_size)
+    except subprocess.CalledProcessError as e:
+        parser.exit(1, f'git clone failed with exit code {e.returncode}\n')
+    print(f'All files have been written to {out}')
 
 
 if __name__ == '__main__':
-    harvester = RepoHarvester()
-    harvester.run_from_command_line()
+    main()
