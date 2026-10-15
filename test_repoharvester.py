@@ -176,3 +176,14 @@ def test_stdout_is_utf8_even_on_a_legacy_console(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(sys, 'stdout', io.TextIOWrapper(raw, encoding='cp1252'))  # Windows pipe default
     main([str(src), '-o', '-'])
     assert 'Привет 👋' in raw.getvalue().decode('utf-8')
+
+
+def test_log_and_header_report_the_same_token_total(tmp_path: Path, caplog):
+    src = tmp_path / 'src'
+    src.mkdir()
+    for i in range(30):
+        (src / f'f{i:02}.txt').write_text('y' * 400)
+    with caplog.at_level(logging.INFO, logger='repoharvester'):
+        text = harvest_text(str(src)).text
+    header_total = text.splitlines()[1].split('~')[1].split(' ')[0]
+    assert f'~{header_total} tokens' in caplog.text

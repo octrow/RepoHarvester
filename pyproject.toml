@@ -1,6 +1,6 @@
 [project]
 name = "repoharvester"
-version = "0.3.0"
+version = "0.3.1"
 description = "Clone a git repo or read a folder and compile its text files into one file for LLM context. CLI plus optional GUI, no dependencies."
 readme = "README.md"
 license = "MIT"

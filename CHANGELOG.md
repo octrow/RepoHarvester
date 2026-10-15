@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-16
+
+### Fixed
+- The log reports the same token total as the output header (it used to count the header too).
+
 ## [0.3.0] - 2026-10-16
 
 ### Added
@@ -45,7 +50,8 @@ First release on PyPI.
 - Python comments are removed with the tokenizer; string literals are kept in every language.
 - Core rewritten as plain functions with a `HarvestOptions` parameter object; clone failures raise `CloneError`.
 
-[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/octrow/RepoHarvester/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/octrow/RepoHarvester/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/octrow/RepoHarvester/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/octrow/RepoHarvester/compare/v0.2.0...v0.2.1

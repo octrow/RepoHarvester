@@ -197,9 +197,14 @@ def _format_tokens(tokens: int) -> str:
     return f'{tokens / 1000:.1f}k' if tokens >= 1000 else str(tokens)
 
 
+def _total_tokens(sections: dict[str, str]) -> int:
+    """Sum of per-file estimates: the figure both the header and the log report."""
+    return sum(_tokens(s) for s in sections.values())
+
+
 def _assemble(name: str, sections: dict[str, str]) -> str:
     """Header, a file list with token estimates, then every section."""
-    total = sum(_tokens(s) for s in sections.values())
+    total = _total_tokens(sections)
     tree = ''.join(f'{rel}  ~{_format_tokens(_tokens(s))}\n' for rel, s in sections.items())
     header = f'## {name}\n### Files: {len(sections)}, ~{_format_tokens(total)} tokens\n{tree}\n'
     return header + ''.join(sections.values())
@@ -280,7 +285,7 @@ def harvest_text(repo: str, options: HarvestOptions = DEFAULT_OPTIONS,
         sections, skipped = _render(_select_files(root, options), root, options)
     result = Harvest(name, _assemble(name, sections), len(sections), skipped)
     log.info("%d files, ~%s tokens (%d non-UTF-8 skipped)",
-             result.file_count, _format_tokens(_tokens(result.text)), len(skipped))
+             result.file_count, _format_tokens(_total_tokens(sections)), len(skipped))
     return result
 
 
