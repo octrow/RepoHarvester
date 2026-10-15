@@ -46,7 +46,9 @@ repoharvester <repo-url-or-folder> [options]
 | `--no-skip GROUP[,GROUP]` | Включить группы, которые по умолчанию пропускаются (можно повторять) |
 | `--max-size KB` | Пропускать файлы больше этого размера (по умолчанию 1000). Файлы больше 500 KB попадают в лог |
 | `--exclude DIR[,DIR]` | Имена папок, которые исключаются вместе с содержимым (можно повторять) |
-| `-o`, `--output-dir` | Папка для результата (по умолчанию `output`) |
+| `--include GLOB[,GLOB]` | Брать только файлы по этим маскам, например `*.py,*.md` (можно повторять) |
+| `--exclude-glob GLOB[,GLOB]` | Пропускать файлы по этим маскам, например `tests/*` (можно повторять) |
+| `-o`, `--output-dir` | Папка для результата (по умолчанию `output`) или `-`, чтобы печатать в stdout |
 | `--log FILE` | Дополнительно писать лог в файл |
 
 Группы: `archive`, `audio`, `cache_files`, `certificate`, `compiled_code`, `configuration`, `database`, `executables`, `font`, `log_files`, `media`, `node_modules`, `office`, `package_locks`, `system`, `temporary`, `video`, `virtual_env`. Подробности в `EXTENSION_GROUPS`, `FILENAME_GROUPS` и `FOLDER_GROUPS` в `repoharvester.py`.
@@ -54,7 +56,11 @@ repoharvester <repo-url-or-folder> [options]
 Пример:
 ```shell
 repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-size 250 --exclude vendor,docs
+
+# только Python и Markdown, без тестов, сразу в буфер обмена
+repoharvester . --include '*.py,*.md' --exclude-glob 'tests/*' -o - | xclip -selection clipboard   # macOS: | pbcopy
 ```
+Маски сравниваются с путём от корня репозитория или с именем файла; `*` захватывает и `/`, поэтому пишите `test_*.py` или `docs/*` (а не `**/test_*.py` или `docs/`). Вывод в stdout всегда в UTF-8. Они применяются поверх групп и `.gitignore`.
 
 ## GUI
 ```shell
@@ -62,7 +68,7 @@ repoharvester-gui                         # после установки с [gu
 uv run --extra gui repoharvester-gui      # из клона репозитория
 ```
 
-<img src="docs/gui.png" width="520" alt="Окно RepoHarvester: поля для адреса репозитория и папки результата, максимальный размер файла, исключаемые папки, флажок удаления комментариев, сетка групп файлов и кнопка Harvest над пустым логом">
+<img src="docs/gui.png" width="520" alt="Окно RepoHarvester: поля для адреса репозитория и папки результата, максимальный размер файла, исключаемые папки, маски «только эти файлы» и «пропустить файлы», флажок удаления комментариев, сетка групп файлов и кнопка Harvest над пустым логом">
 
 Вставьте git-адрес или выберите папку, отметьте, что ещё включить, нажмите **Harvest** (или Enter), затем **Open file**.
 Пока идёт клонирование, кнопка превращается в **Cancel**. Настройки сохраняются в `~/.config/repoharvester/gui.json`.
@@ -71,11 +77,17 @@ uv run --extra gui repoharvester-gui      # из клона репозитори
 ## Формат результата
 ```
 ## <repo-name>
-### <relative/path/to/file.ext>
+### Files: <count>, ~<tokens> tokens
+<relative/path/one.ext>  ~<tokens>
+<relative/path/two.ext>  ~<tokens>
+
+### <relative/path/one.ext>
 <file contents>
 ### end of file
 ...
 ```
+Список файлов в начале показывает модели структуру репозитория, а вам — какие файлы съедают контекст. Токены оценочные (~4 символа на токен).
+
 Пишется в `<output-dir>/<repo-name>_all_files.txt`, рядом лежит `skipped_files.txt`.
 
 ## Альтернативы

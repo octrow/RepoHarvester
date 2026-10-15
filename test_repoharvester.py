@@ -1,5 +1,7 @@
+import io
 import logging
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -13,6 +15,7 @@ from repoharvester import (
     collect_files,
     get_repo_name,
     harvest,
+    harvest_text,
     main,
     remove_comments,
 )
@@ -43,7 +46,13 @@ def test_harvest_local_folder(tmp_path: Path):
     assert [p.name for p in collect_files(src)] == ['bad.txt', 'a.py']
 
     out = harvest(str(src), HarvestOptions(tmp_path / 'out', strip_comments=True))
-    assert out.read_text() == '## proj\n### pkg/a.py\na = 1  \n\n### end of file\n'
+    assert out.read_text() == (
+        '## proj\n'
+        '### Files: 1, ~10 tokens\n'
+        'pkg/a.py  ~10\n'
+        '\n'
+        '### pkg/a.py\na = 1  \n\n### end of file\n'
+    )
     assert (tmp_path / 'out' / 'skipped_files.txt').read_text() == 'bad.txt\n'
 
 
@@ -123,3 +132,47 @@ def test_failed_clone_keeps_previous_result(tmp_path: Path):
     with pytest.raises(CloneError, match=r'y\.git'):
         harvest(str(tmp_path / 'missing' / 'y.git'), HarvestOptions(tmp_path / 'out'))
     assert previous.read_text() == 'good result'
+
+
+def _sample_repo(tmp_path: Path) -> Path:
+    src = tmp_path / 'src'
+    for rel in ('app.py', 'lib/util.py', 'tests/test_app.py', 'README.md', 'notes.txt'):
+        (src / rel).parent.mkdir(parents=True, exist_ok=True)
+        (src / rel).write_text(f'# {rel}\n')
+    return src
+
+
+def test_file_tree_lists_every_file_with_tokens(tmp_path: Path):
+    text = harvest_text(str(_sample_repo(tmp_path))).text
+    tree = text.split('\n\n', 1)[0].splitlines()
+    assert tree[1].startswith('### Files: 5, ~')
+    assert [line.split('  ~')[0] for line in tree[2:]] == [
+        'README.md', 'app.py', 'notes.txt', 'lib/util.py', 'tests/test_app.py']
+
+
+def test_include_and_exclude_globs(tmp_path: Path):
+    options = HarvestOptions(include_globs=('*.py',), exclude_globs=('tests/*',))
+    text = harvest_text(str(_sample_repo(tmp_path)), options).text
+    assert '### app.py' in text
+    assert '### lib/util.py' in text
+    assert 'test_app.py' not in text
+    assert 'README.md' not in text
+
+
+def test_cli_writes_to_stdout(tmp_path: Path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    main([str(_sample_repo(tmp_path)), '-o', '-', '--include', 'README.md'])
+    out = capsys.readouterr().out
+    assert out.startswith('## src\n### Files: 1, ~')
+    assert '### README.md\n# README.md\n' in out
+    assert not (tmp_path / 'output').exists()
+
+
+def test_stdout_is_utf8_even_on_a_legacy_console(tmp_path: Path, monkeypatch):
+    src = tmp_path / 'src'
+    src.mkdir()
+    (src / 'notes.md').write_text('Привет 👋\n', encoding='utf-8')
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, 'stdout', io.TextIOWrapper(raw, encoding='cp1252'))  # Windows pipe default
+    main([str(src), '-o', '-'])
+    assert 'Привет 👋' in raw.getvalue().decode('utf-8')

@@ -63,6 +63,11 @@ def _make_fonts() -> dict[str, ctk.CTkFont]:
     }
 
 
+def _items(entry: ctk.CTkEntry) -> tuple[str, ...]:
+    """Comma-separated entry text as a tuple of non-empty items."""
+    return tuple(item.strip() for item in entry.get().split(",") if item.strip())
+
+
 def _load_settings() -> dict:
     try:
         return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
@@ -101,8 +106,8 @@ class App(ctk.CTk):
     def __init__(self) -> None:
         super().__init__(fg_color=FIELD)
         self.title("RepoHarvester")
-        self.geometry("720x780")
-        self.minsize(600, 660)
+        self.geometry("720x860")
+        self.minsize(600, 700)
         self.fonts = _make_fonts()
         # str = log line; callable = completion step the worker hands to the Tk thread.
         self.messages: queue.Queue[str | Callable[[], None]] = queue.Queue()
@@ -149,6 +154,8 @@ class App(ctk.CTk):
         self.max_size = self._field(card, "Max file size", "KB")
         self.max_size.insert(0, str(DEFAULT_MAX_SIZE_KB))
         self.exclude = self._field(card, "Skip folders", "vendor, docs")
+        self.only_globs = self._field(card, "Only files", "*.py, *.md  (empty = all)")
+        self.skip_globs = self._field(card, "Skip files", "tests/*, *.min.js")
         self.strip = ctk.BooleanVar(value=False)
         self._checkbox(card, "Strip code comments", self.strip).pack(anchor="w", padx=GAP, pady=GAP)
 
@@ -252,8 +259,10 @@ class App(ctk.CTk):
             output_dir=Path(self.out_dir.get().strip() or DEFAULT_OUTPUT_DIR),
             strip_comments=self.strip.get(),
             skip_groups=frozenset(g for g, var in self.include.items() if not var.get()),
-            exclude_folders=tuple(f.strip() for f in self.exclude.get().split(",") if f.strip()),
+            exclude_folders=_items(self.exclude),
             max_size_kb=int(self.max_size.get()),
+            include_globs=_items(self.only_globs),
+            exclude_globs=_items(self.skip_globs),
         )
 
     def _settings(self) -> dict:
@@ -262,13 +271,16 @@ class App(ctk.CTk):
             "output_dir": self.out_dir.get().strip(),
             "max_size_kb": self.max_size.get().strip(),
             "exclude": self.exclude.get().strip(),
+            "only_globs": self.only_globs.get().strip(),
+            "skip_globs": self.skip_globs.get().strip(),
             "strip_comments": self.strip.get(),
             "include": sorted(g for g, var in self.include.items() if var.get()),
         }
 
     def _apply_settings(self, settings: dict) -> None:
         for entry, key in ((self.repo, "repo"), (self.out_dir, "output_dir"),
-                           (self.max_size, "max_size_kb"), (self.exclude, "exclude")):
+                           (self.max_size, "max_size_kb"), (self.exclude, "exclude"),
+                           (self.only_globs, "only_globs"), (self.skip_globs, "skip_globs")):
             if settings.get(key):
                 entry.delete(0, "end")
                 entry.insert(0, str(settings[key]))

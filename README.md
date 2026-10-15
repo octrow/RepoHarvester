@@ -46,7 +46,9 @@ repoharvester <repo-url-or-folder> [options]
 | `--no-skip GROUP[,GROUP]` | Include groups that are skipped by default (repeatable) |
 | `--max-size KB` | Skip files larger than this (default 1000). Files over 500 KB are logged |
 | `--exclude DIR[,DIR]` | Folder names to exclude, along with their contents (repeatable) |
-| `-o`, `--output-dir` | Output directory (default `output`) |
+| `--include GLOB[,GLOB]` | Only harvest files matching these globs, e.g. `*.py,*.md` (repeatable) |
+| `--exclude-glob GLOB[,GLOB]` | Skip files matching these globs, e.g. `tests/*` (repeatable) |
+| `-o`, `--output-dir` | Output directory (default `output`), or `-` to print to stdout |
 | `--log FILE` | Also write the log to a file |
 
 Groups: `archive`, `audio`, `cache_files`, `certificate`, `compiled_code`, `configuration`, `database`, `executables`, `font`, `log_files`, `media`, `node_modules`, `office`, `package_locks`, `system`, `temporary`, `video`, `virtual_env`. See `EXTENSION_GROUPS`, `FILENAME_GROUPS` and `FOLDER_GROUPS` in `repoharvester.py`.
@@ -54,7 +56,11 @@ Groups: `archive`, `audio`, `cache_files`, `certificate`, `compiled_code`, `conf
 Example:
 ```shell
 repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-size 250 --exclude vendor,docs
+
+# only Python and Markdown, no tests, straight to the clipboard
+repoharvester . --include '*.py,*.md' --exclude-glob 'tests/*' -o - | xclip -selection clipboard   # macOS: | pbcopy
 ```
+Globs match the path relative to the repo root or the bare file name; `*` also crosses `/`, so write `test_*.py` or `docs/*` (not `**/test_*.py` or `docs/`). Output to stdout is always UTF-8. They apply on top of the groups and `.gitignore`.
 
 ## GUI
 ```shell
@@ -62,7 +68,7 @@ repoharvester-gui                         # after installing with [gui]
 uv run --extra gui repoharvester-gui      # from a clone
 ```
 
-<img src="docs/gui.png" width="520" alt="RepoHarvester window: repository URL and output folder fields, max file size, skip folders, a strip-comments checkbox, a grid of file groups to include, and a Harvest button above an empty log">
+<img src="docs/gui.png" width="520" alt="RepoHarvester window: repository URL and output folder fields, max file size, skip folders, only-files and skip-files globs, a strip-comments checkbox, a grid of file groups to include, and a Harvest button above an empty log">
 
 Paste a git URL or choose a folder, tick anything extra to include, press **Harvest** (or Enter), then **Open file**.
 While a clone runs the button turns into **Cancel**. Settings are remembered in `~/.config/repoharvester/gui.json`.
@@ -71,11 +77,17 @@ On Linux the project prefers the system Python: uv's bundled builds ship Tk with
 ## Output format
 ```
 ## <repo-name>
-### <relative/path/to/file.ext>
+### Files: <count>, ~<tokens> tokens
+<relative/path/one.ext>  ~<tokens>
+<relative/path/two.ext>  ~<tokens>
+
+### <relative/path/one.ext>
 <file contents>
 ### end of file
 ...
 ```
+The file list up front shows the model the repository's shape and shows you which files eat the context. Token counts are estimates (~4 characters per token).
+
 Written to `<output-dir>/<repo-name>_all_files.txt`, with `skipped_files.txt` next to it.
 
 ## Alternatives

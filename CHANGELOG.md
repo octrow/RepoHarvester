@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
+### Added
+- File list with per-file token estimates at the top of the output.
+- `--include` / `--exclude-glob` to pick files by glob; the same fields in the GUI.
+- `-o -` prints the result to stdout, ready for a pipe or the clipboard.
+- `harvest_text()` returns the compiled text without writing files.
+
+### Changed
+- Output format: a `### Files: N, ~T tokens` list now precedes the file sections.
+
 ## [0.2.2] - 2026-10-16
 
 ### Added
@@ -34,7 +45,8 @@ First release on PyPI.
 - Python comments are removed with the tokenizer; string literals are kept in every language.
 - Core rewritten as plain functions with a `HarvestOptions` parameter object; clone failures raise `CloneError`.
 
-[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/octrow/RepoHarvester/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/octrow/RepoHarvester/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/octrow/RepoHarvester/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/octrow/RepoHarvester/releases/tag/v0.2.0

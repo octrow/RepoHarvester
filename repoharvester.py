@@ -1,11 +1,13 @@
 """Clone a git repository (or read a local folder) and compile its text files into one file."""
 import argparse
+import fnmatch
 import io
 import logging
 import os
 import re
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import tokenize
@@ -18,6 +20,7 @@ DEFAULT_MAX_SIZE_KB = 1000
 LARGE_FILE_KB = 500
 CHARS_PER_TOKEN = 4  # rough average for code and English text
 CANCEL_POLL_S = 0.2
+STDOUT = '-'
 DEFAULT_OUTPUT_DIR = Path("output")
 
 # Matched against lowercased file extensions.
@@ -118,6 +121,17 @@ class HarvestOptions:
     skip_groups: frozenset[str] = frozenset(ALL_GROUPS)
     exclude_folders: tuple[str, ...] = ()
     max_size_kb: int = DEFAULT_MAX_SIZE_KB
+    include_globs: tuple[str, ...] = ()  # empty = everything
+    exclude_globs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Harvest:
+    """The compiled text of one harvest plus what went into it."""
+    name: str
+    text: str
+    file_count: int
+    skipped: list[str]
 
 
 DEFAULT_OPTIONS = HarvestOptions()
@@ -154,26 +168,41 @@ def _within_size(path: Path, root: Path, max_size_kb: int) -> bool:
     return True
 
 
-def _section(path: Path, root: Path, options: HarvestOptions) -> str:
+def _section(rel: str, path: Path, options: HarvestOptions) -> str:
     """One file as an output section; raises UnicodeDecodeError for non-UTF-8 files."""
     content = path.read_text(encoding='utf-8')
     if options.strip_comments:
         content = remove_comments(content, path.suffix.lstrip('.'))
-    return f'### {path.relative_to(root).as_posix()}\n{content}\n### end of file\n'
+    return f'### {rel}\n{content}\n### end of file\n'
 
 
-def write_union_file(files: list[Path], root: Path, out_file: Path, options: HarvestOptions) -> list[str]:
-    """Append files to out_file; return relative paths skipped as non-UTF-8."""
-    skipped = []
-    with out_file.open('a', encoding='utf-8') as out:
-        for path in files:
-            try:
-                out.write(_section(path, root, options))
-            except UnicodeDecodeError:
-                rel = path.relative_to(root).as_posix()
-                log.info("Skipping non-UTF-8 file: %s", rel)
-                skipped.append(rel)
-    return skipped
+def _render(files: list[Path], root: Path, options: HarvestOptions) -> tuple[dict[str, str], list[str]]:
+    """Sections keyed by relative path, plus relative paths skipped as non-UTF-8."""
+    sections, skipped = {}, []
+    for path in files:
+        rel = path.relative_to(root).as_posix()
+        try:
+            sections[rel] = _section(rel, path, options)
+        except UnicodeDecodeError:
+            log.info("Skipping non-UTF-8 file: %s", rel)
+            skipped.append(rel)
+    return sections, skipped
+
+
+def _tokens(text: str) -> int:
+    return round(len(text) / CHARS_PER_TOKEN)
+
+
+def _format_tokens(tokens: int) -> str:
+    return f'{tokens / 1000:.1f}k' if tokens >= 1000 else str(tokens)
+
+
+def _assemble(name: str, sections: dict[str, str]) -> str:
+    """Header, a file list with token estimates, then every section."""
+    total = sum(_tokens(s) for s in sections.values())
+    tree = ''.join(f'{rel}  ~{_format_tokens(_tokens(s))}\n' for rel, s in sections.items())
+    header = f'## {name}\n### Files: {len(sections)}, ~{_format_tokens(total)} tokens\n{tree}\n'
+    return header + ''.join(sections.values())
 
 
 def _drop_git_ignored(root: Path, files: list[Path]) -> list[Path]:
@@ -190,7 +219,20 @@ def _select_files(root: Path, options: HarvestOptions) -> list[Path]:
     """collect_files minus the output folder and anything git ignores."""
     output = options.output_dir.resolve()
     files = [f for f in collect_files(root, options) if not f.resolve().is_relative_to(output)]
+    files = [f for f in files if _glob_selected(f.relative_to(root).as_posix(), options)]
     return _drop_git_ignored(root, files)
+
+
+def _matches(rel: str, patterns: tuple[str, ...]) -> bool:
+    """fnmatch against the relative path or the bare file name ('*' also crosses '/')."""
+    name = rel.rsplit('/', 1)[-1]
+    return any(fnmatch.fnmatchcase(rel, p) or fnmatch.fnmatchcase(name, p) for p in patterns)
+
+
+def _glob_selected(rel: str, options: HarvestOptions) -> bool:
+    if options.include_globs and not _matches(rel, options.include_globs):
+        return False
+    return not _matches(rel, options.exclude_globs)
 
 
 class HarvestCancelled(Exception):
@@ -226,32 +268,32 @@ def _clone(repo: str, dest: Path, cancel: threading.Event | None) -> None:
         raise CloneError(_clone_failure(repo, proc.returncode, stderr))
 
 
-def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS, cancel: threading.Event | None = None) -> Path:
-    """Harvest a git URL or local folder into <output_dir>/<name>_all_files.txt and return its path.
-
-    Setting `cancel` aborts a running clone with HarvestCancelled.
-    """
-    options.output_dir.mkdir(parents=True, exist_ok=True)
+def harvest_text(repo: str, options: HarvestOptions = DEFAULT_OPTIONS,
+                 cancel: threading.Event | None = None) -> Harvest:
+    """Compile a git URL or local folder in memory. Setting `cancel` aborts a running clone."""
     local = Path(repo).expanduser()
-    repo_name = local.resolve().name if local.is_dir() else get_repo_name(repo)
-    out_file = options.output_dir / f'{repo_name}_all_files.txt'
-
+    name = local.resolve().name if local.is_dir() else get_repo_name(repo)
     with tempfile.TemporaryDirectory(prefix='repoharvester_') as tmp:
         root = local if local.is_dir() else Path(tmp)
         if root != local:
             _clone(repo, root, cancel)
-        out_file.write_text(f'## {repo_name}\n', encoding='utf-8')  # only now: a failed clone keeps the old result
-        files = _select_files(root, options)
-        skipped = write_union_file(files, root, out_file, options)
+        sections, skipped = _render(_select_files(root, options), root, options)
+    result = Harvest(name, _assemble(name, sections), len(sections), skipped)
+    log.info("%d files, ~%s tokens (%d non-UTF-8 skipped)",
+             result.file_count, _format_tokens(_tokens(result.text)), len(skipped))
+    return result
 
-    (options.output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in skipped), encoding='utf-8')
-    _report(out_file, len(files) - len(skipped), len(skipped))
+
+def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS, cancel: threading.Event | None = None) -> Path:
+    """Harvest into <output_dir>/<name>_all_files.txt and return its path; a failed clone keeps the old file."""
+    result = harvest_text(repo, options, cancel)
+    options.output_dir.mkdir(parents=True, exist_ok=True)
+    out_file = options.output_dir / f'{result.name}_all_files.txt'
+    out_file.write_text(result.text, encoding='utf-8')
+    (options.output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in result.skipped),
+                                                          encoding='utf-8')
+    log.info("Wrote %s", out_file)
     return out_file
-
-
-def _report(out_file: Path, written: int, skipped: int) -> None:
-    tokens_k = out_file.stat().st_size / CHARS_PER_TOKEN / 1000
-    log.info("Wrote %d files to %s, ~%.1fk tokens (%d non-UTF-8 skipped)", written, out_file, tokens_k, skipped)
 
 
 def _clone_failure(repo: str, returncode: int, stderr: str) -> str:
@@ -263,6 +305,13 @@ def _csv(value: str) -> list[str]:
     return [v.strip() for v in value.split(',') if v.strip()]
 
 
+def _write_stdout(text: str) -> None:
+    """Always UTF-8: a redirected stdout on Windows defaults to the ANSI code page and can't encode most text."""
+    sys.stdout.flush()
+    sys.stdout.buffer.write(text.encode('utf-8'))
+    sys.stdout.buffer.flush()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Clone a repo and compile its contents into a single file.')
     parser.add_argument('repo', help='git URL (SSH or HTTPS) or path to a local folder')
@@ -272,7 +321,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--max-size', type=int, default=DEFAULT_MAX_SIZE_KB, help='maximum file size in KB')
     parser.add_argument('--exclude', action='extend', type=_csv, default=[], metavar='DIR[,DIR]',
                         help='folder names to exclude (with contents); repeatable')
-    parser.add_argument('-o', '--output-dir', type=Path, default=DEFAULT_OUTPUT_DIR, help='output directory')
+    parser.add_argument('--include', action='extend', type=_csv, default=[], metavar='GLOB[,GLOB]',
+                        help='only harvest files matching these globs, e.g. "*.py,*.md"; repeatable')
+    parser.add_argument('--exclude-glob', action='extend', type=_csv, default=[], metavar='GLOB[,GLOB]',
+                        help='skip files matching these globs, e.g. "tests/*"; repeatable')
+    parser.add_argument('-o', '--output-dir', type=Path, default=DEFAULT_OUTPUT_DIR,
+                        help=f'output directory, or - for stdout (default: {DEFAULT_OUTPUT_DIR})')
     parser.add_argument('--log', type=Path, help='also write the log to this file')
     return parser
 
@@ -292,12 +346,14 @@ def main(argv=None):
         parser.error(f'unknown group(s): {", ".join(sorted(unknown))}')
     _setup_logging(args.log)
     options = HarvestOptions(args.output_dir, args.remove, frozenset(ALL_GROUPS) - set(args.no_skip),
-                             tuple(args.exclude), args.max_size)
+                             tuple(args.exclude), args.max_size, tuple(args.include), tuple(args.exclude_glob))
     try:
-        out = harvest(args.repo, options)
+        if str(args.output_dir) == STDOUT:
+            _write_stdout(harvest_text(args.repo, options).text)
+        else:
+            print(f'All files have been written to {harvest(args.repo, options)}')
     except CloneError as e:
         parser.exit(1, f'{e}\n')
-    print(f'All files have been written to {out}')
 
 
 if __name__ == '__main__':
