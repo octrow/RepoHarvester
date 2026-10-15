@@ -4,6 +4,7 @@ import logging
 import re
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 log = logging.getLogger("repoharvester")
@@ -87,12 +88,25 @@ def _members(table: dict[str, set[str]], groups: set[str]) -> set[str]:
     return set().union(*(v for k, v in table.items() if k in groups))
 
 
-def collect_files(root: Path, skip_groups=None, exclude_folders=(), max_size_kb=DEFAULT_MAX_SIZE_KB):
+@dataclass(frozen=True)
+class HarvestOptions:
+    """Everything that shapes one harvest besides the source itself."""
+    output_dir: Path = DEFAULT_OUTPUT_DIR
+    strip_comments: bool = False
+    skip_groups: frozenset[str] = frozenset(ALL_GROUPS)
+    exclude_folders: tuple[str, ...] = ()
+    max_size_kb: int = DEFAULT_MAX_SIZE_KB
+
+
+DEFAULT_OPTIONS = HarvestOptions()
+
+
+def collect_files(root: Path, options: HarvestOptions = DEFAULT_OPTIONS) -> list[Path]:
     """Return sorted files under root, honouring skip groups, excluded folders and size limit."""
-    groups = set(ALL_GROUPS if skip_groups is None else skip_groups)
+    groups = options.skip_groups
     skip_ext = _members(EXTENSION_GROUPS, groups)
     skip_names = _members(FILENAME_GROUPS, groups)
-    skip_dirs = ALWAYS_SKIPPED_FOLDERS | set(exclude_folders) | _members(FOLDER_GROUPS, groups)
+    skip_dirs = ALWAYS_SKIPPED_FOLDERS | set(options.exclude_folders) | _members(FOLDER_GROUPS, groups)
 
     files = []
     for dirpath, dirnames, filenames in root.walk():
@@ -102,7 +116,7 @@ def collect_files(root: Path, skip_groups=None, exclude_folders=(), max_size_kb=
             ext = path.suffix.lstrip('.').lower()
             if name in skip_names or ext in skip_ext or path.is_symlink():
                 continue
-            if _within_size(path, root, max_size_kb):
+            if _within_size(path, root, options.max_size_kb):
                 files.append(path)
     return files
 
@@ -118,22 +132,25 @@ def _within_size(path: Path, root: Path, max_size_kb: int) -> bool:
     return True
 
 
-def write_union_file(files, root: Path, out_file: Path, repo_name: str, strip_comments=False):
-    """Write files into out_file; return list of relative paths skipped as non-UTF-8."""
+def _section(path: Path, root: Path, options: HarvestOptions) -> str:
+    """One file as an output section; raises UnicodeDecodeError for non-UTF-8 files."""
+    content = path.read_text(encoding='utf-8')
+    if options.strip_comments:
+        content = remove_comments(content, path.suffix.lstrip('.'))
+    return f'### {path.relative_to(root).as_posix()}\n{content}\n### end of file\n'
+
+
+def write_union_file(files: list[Path], root: Path, out_file: Path, options: HarvestOptions) -> list[str]:
+    """Append files to out_file; return relative paths skipped as non-UTF-8."""
     skipped = []
-    with out_file.open('w', encoding='utf-8') as out:
-        out.write(f'## {repo_name}\n')
+    with out_file.open('a', encoding='utf-8') as out:
         for path in files:
-            rel = path.relative_to(root).as_posix()
             try:
-                content = path.read_text(encoding='utf-8')
+                out.write(_section(path, root, options))
             except UnicodeDecodeError:
+                rel = path.relative_to(root).as_posix()
                 log.info("Skipping non-UTF-8 file: %s", rel)
                 skipped.append(rel)
-                continue
-            if strip_comments:
-                content = remove_comments(content, path.suffix.lstrip('.'))
-            out.write(f'### {rel}\n{content}\n### end of file\n')
     return skipped
 
 
@@ -146,30 +163,37 @@ def git_visible_files(root: Path) -> set[str] | None:
     return set(filter(None, result.stdout.split('\0')))
 
 
-def harvest(repo: str, output_dir: Path = DEFAULT_OUTPUT_DIR, strip_comments=False, skip_groups=None,
-            exclude_folders=(), max_size_kb=DEFAULT_MAX_SIZE_KB) -> Path:
+def _select_files(root: Path, options: HarvestOptions) -> list[Path]:
+    """collect_files minus the output folder and anything git ignores."""
+    output = options.output_dir.resolve()
+    files = [f for f in collect_files(root, options) if not f.resolve().is_relative_to(output)]
+    if (visible := git_visible_files(root)) is None:
+        return files
+    return [f for f in files if f.relative_to(root).as_posix() in visible]
+
+
+def _clone(repo: str, dest: Path) -> None:
+    log.info("Cloning %s", repo)
+    subprocess.run(['git', 'clone', '--depth', '1', '--quiet', repo, str(dest)],
+                   check=True, stderr=subprocess.PIPE, text=True)
+
+
+def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS) -> Path:
     """Harvest a git URL or local folder into <output_dir>/<name>_all_files.txt and return its path."""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    options.output_dir.mkdir(parents=True, exist_ok=True)
     local = Path(repo).expanduser()
     repo_name = local.resolve().name if local.is_dir() else get_repo_name(repo)
-    out_file = output_dir / f'{repo_name}_all_files.txt'
+    out_file = options.output_dir / f'{repo_name}_all_files.txt'
+    out_file.write_text(f'## {repo_name}\n', encoding='utf-8')
 
     with tempfile.TemporaryDirectory(prefix='repoharvester_') as tmp:
-        if local.is_dir():
-            root = local
-        else:
-            root = Path(tmp)
-            log.info("Cloning %s", repo)
-            subprocess.run(['git', 'clone', '--depth', '1', '--quiet', repo, str(root)],
-                           check=True, stderr=subprocess.PIPE, text=True)
-        files = collect_files(root, skip_groups, exclude_folders, max_size_kb)
-        files = [f for f in files if not f.resolve().is_relative_to(output_dir.resolve())]
-        if (visible := git_visible_files(root)) is not None:
-            files = [f for f in files if f.relative_to(root).as_posix() in visible]
-        skipped = write_union_file(files, root, out_file, repo_name, strip_comments)
+        root = local if local.is_dir() else Path(tmp)
+        if root != local:
+            _clone(repo, root)
+        files = _select_files(root, options)
+        skipped = write_union_file(files, root, out_file, options)
 
-    (output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in skipped), encoding='utf-8')
+    (options.output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in skipped), encoding='utf-8')
     tokens_k = out_file.stat().st_size / CHARS_PER_TOKEN / 1000
     log.info("Wrote %d files to %s, ~%.1fk tokens (%d non-UTF-8 skipped)",
              len(files) - len(skipped), out_file, tokens_k, len(skipped))
@@ -186,7 +210,7 @@ def _csv(value: str) -> list[str]:
     return [v.strip() for v in value.split(',') if v.strip()]
 
 
-def main(argv=None):
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Clone a repo and compile its contents into a single file.')
     parser.add_argument('repo', help='git URL (SSH or HTTPS) or path to a local folder')
     parser.add_argument('-r', '--remove', action='store_true', help='remove comments from code files')
@@ -197,19 +221,27 @@ def main(argv=None):
                         help='folder names to exclude (with contents); repeatable')
     parser.add_argument('-o', '--output-dir', type=Path, default=DEFAULT_OUTPUT_DIR, help='output directory')
     parser.add_argument('--log', type=Path, help='also write the log to this file')
+    return parser
+
+
+def _setup_logging(log_file: Path | None) -> None:
+    handlers = [logging.StreamHandler()]
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file, encoding='utf-8'))
+    logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=handlers)
+
+
+def main(argv=None):
+    parser = _parser()
     args = parser.parse_args(argv)
     if unknown := set(args.no_skip) - set(ALL_GROUPS):
         parser.error(f'unknown group(s): {", ".join(sorted(unknown))}')
-
-    handlers = [logging.StreamHandler()]
-    if args.log:
-        args.log.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(args.log, encoding='utf-8'))
-    logging.basicConfig(level=logging.INFO, format='%(message)s', handlers=handlers)
-
+    _setup_logging(args.log)
+    options = HarvestOptions(args.output_dir, args.remove, frozenset(ALL_GROUPS) - set(args.no_skip),
+                             tuple(args.exclude), args.max_size)
     try:
-        out = harvest(args.repo, args.output_dir, args.remove, set(ALL_GROUPS) - set(args.no_skip),
-                      args.exclude, args.max_size)
+        out = harvest(args.repo, options)
     except subprocess.CalledProcessError as e:
         parser.exit(1, f'{clone_error(e)}\n')
     print(f'All files have been written to {out}')

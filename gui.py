@@ -12,7 +12,7 @@ from tkinter import font as tkfont
 
 import customtkinter as ctk
 
-from repoharvester import ALL_GROUPS, DEFAULT_MAX_SIZE_KB, DEFAULT_OUTPUT_DIR, clone_error, harvest
+from repoharvester import ALL_GROUPS, DEFAULT_MAX_SIZE_KB, DEFAULT_OUTPUT_DIR, HarvestOptions, clone_error, harvest
 
 POLL_MS = 100
 GUTTER = 20
@@ -197,26 +197,26 @@ class App(ctk.CTk):
         if not self.max_size.get().strip().isdigit():
             self._set_status("Max file size must be a whole number of KB.", ERROR)
             return
-        kwargs = self._form_values()
+        options = self._form_values()
         self.start.configure(state="disabled", text="Harvesting…")
         self.open_button.pack_forget()
         self._set_status(f"Harvesting {repo}")
-        threading.Thread(target=self._run, args=(repo,), kwargs=kwargs, daemon=True).start()
+        threading.Thread(target=self._run, args=(repo, options), daemon=True).start()
 
-    def _form_values(self) -> dict:
-        """Read the form into harvest() keyword arguments."""
-        return {
-            "output_dir": Path(self.out_dir.get().strip() or DEFAULT_OUTPUT_DIR),
-            "strip_comments": self.strip.get(),
-            "skip_groups": {g for g, var in self.include.items() if not var.get()},
-            "exclude_folders": [f.strip() for f in self.exclude.get().split(",") if f.strip()],
-            "max_size_kb": int(self.max_size.get()),
-        }
+    def _form_values(self) -> HarvestOptions:
+        """Read the form into harvest() options."""
+        return HarvestOptions(
+            output_dir=Path(self.out_dir.get().strip() or DEFAULT_OUTPUT_DIR),
+            strip_comments=self.strip.get(),
+            skip_groups=frozenset(g for g, var in self.include.items() if not var.get()),
+            exclude_folders=tuple(f.strip() for f in self.exclude.get().split(",") if f.strip()),
+            max_size_kb=int(self.max_size.get()),
+        )
 
-    def _run(self, repo: str, **kwargs) -> None:
+    def _run(self, repo: str, options: HarvestOptions) -> None:
         """Worker thread: never touches Tk, only the queue."""
         try:
-            result = harvest(repo, **kwargs)
+            result = harvest(repo, options)
         except subprocess.CalledProcessError as e:
             error = clone_error(e)
             self.messages.put(lambda: self._failed(error))

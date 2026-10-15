@@ -2,7 +2,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from repoharvester import collect_files, get_repo_name, harvest, main, remove_comments
+from repoharvester import HarvestOptions, collect_files, get_repo_name, harvest, main, remove_comments
 
 
 def test_remove_comments_keeps_strings():
@@ -29,7 +29,7 @@ def test_harvest_local_folder(tmp_path: Path):
 
     assert [p.name for p in collect_files(src)] == ['bad.txt', 'a.py']
 
-    out = harvest(str(src), tmp_path / 'out', strip_comments=True)
+    out = harvest(str(src), HarvestOptions(tmp_path / 'out', strip_comments=True))
     assert out.read_text() == '## proj\n### pkg/a.py\na = 1  \n\n### end of file\n'
     assert (tmp_path / 'out' / 'skipped_files.txt').read_text() == 'bad.txt\n'
 
@@ -44,8 +44,8 @@ def test_remove_comments_edge_cases():
 
 def test_output_dir_inside_source_is_not_harvested(tmp_path: Path):
     (tmp_path / 'a.txt').write_text('a')
-    harvest(str(tmp_path), tmp_path / 'output')
-    out = harvest(str(tmp_path), tmp_path / 'output')
+    harvest(str(tmp_path), HarvestOptions(tmp_path / 'output'))
+    out = harvest(str(tmp_path), HarvestOptions(tmp_path / 'output'))
     assert '### output/' not in out.read_text()
 
 
@@ -70,7 +70,7 @@ def test_git_repo_respects_gitignore(tmp_path: Path):
     subprocess.run(['git', 'init', '-q', str(src)], check=True)
     subprocess.run(['git', '-C', str(src), 'add', 'app.py', '.gitignore'], check=True)
 
-    text = harvest(str(src), tmp_path / 'out').read_text()
+    text = harvest(str(src), HarvestOptions(tmp_path / 'out')).read_text()
 
     assert '### app.py' in text
     assert '### new.py' in text
@@ -83,5 +83,5 @@ def test_harvest_logs_token_estimate(tmp_path: Path, caplog):
     (tmp_path / 'src').mkdir()
     (tmp_path / 'src' / 'a.txt').write_text('x' * 4000)
     with caplog.at_level(logging.INFO, logger='repoharvester'):
-        harvest(str(tmp_path / 'src'), tmp_path / 'out')
+        harvest(str(tmp_path / 'src'), HarvestOptions(tmp_path / 'out'))
     assert '~1.0k tokens' in caplog.text
