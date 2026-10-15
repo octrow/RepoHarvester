@@ -329,5 +329,9 @@ class App(ctk.CTk):
             _open_file(self.result)
 
 
-if __name__ == "__main__":
+def main() -> None:
     App().mainloop()
+
+
+if __name__ == "__main__":
+    main()

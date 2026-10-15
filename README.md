@@ -44,7 +44,8 @@ repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-
 
 ## GUI
 ```shell
-uv run --extra gui python gui.py
+uv tool install 'repoharvester[gui]'   # then: repoharvester-gui
+uv run --extra gui repoharvester-gui    # from a clone
 ```
 Paste a git URL or choose a folder, tick anything extra to include, press **Harvest** (or Enter), then **Open file**.
 While a clone runs the button turns into **Cancel**. Settings are remembered in `~/.config/repoharvester/gui.json`.
