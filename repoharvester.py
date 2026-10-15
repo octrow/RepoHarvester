@@ -151,7 +151,8 @@ def harvest(repo: str, output_dir: Path = DEFAULT_OUTPUT_DIR, strip_comments=Fal
         else:
             root = Path(tmp)
             log.info("Cloning %s", repo)
-            subprocess.run(['git', 'clone', '--depth', '1', repo, str(root)], check=True)
+            subprocess.run(['git', 'clone', '--depth', '1', '--quiet', repo, str(root)],
+                           check=True, stderr=subprocess.PIPE, text=True)
         files = collect_files(root, skip_groups, exclude_folders, max_size_kb)
         files = [f for f in files if not f.resolve().is_relative_to(output_dir.resolve())]
         skipped = write_union_file(files, root, out_file, repo_name, strip_comments)
@@ -159,6 +160,12 @@ def harvest(repo: str, output_dir: Path = DEFAULT_OUTPUT_DIR, strip_comments=Fal
     (output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in skipped), encoding='utf-8')
     log.info("Wrote %d files to %s (%d non-UTF-8 skipped)", len(files) - len(skipped), out_file, len(skipped))
     return out_file
+
+
+def clone_error(e: subprocess.CalledProcessError) -> str:
+    """One readable line from a failed git clone."""
+    first = next((line.strip() for line in (e.stderr or '').splitlines() if line.strip()), None)
+    return f'git clone failed: {first or f"exit code {e.returncode}"}'
 
 
 def _csv(value: str) -> list[str]:
@@ -190,7 +197,7 @@ def main(argv=None):
         out = harvest(args.repo, args.output_dir, args.remove, set(ALL_GROUPS) - set(args.no_skip),
                       args.exclude, args.max_size)
     except subprocess.CalledProcessError as e:
-        parser.exit(1, f'git clone failed with exit code {e.returncode}\n')
+        parser.exit(1, f'{clone_error(e)}\n')
     print(f'All files have been written to {out}')
 
 

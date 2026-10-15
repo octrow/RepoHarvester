@@ -28,3 +28,7 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "SIM", "C4", "PTH", "RUF"]
+
+[tool.uv]
+# uv's bundled CPython ships Tk without Xft (no antialiasing, no system fonts), so the GUI looks broken.
+python-preference = "system"

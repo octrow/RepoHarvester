@@ -42,6 +42,8 @@ repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-
 ```shell
 uv run --extra gui python gui.py
 ```
+Paste a git URL or choose a folder, tick anything extra to include, press **Harvest** (or Enter), then **Open file**.
+On Linux the project prefers the system Python: uv's bundled builds ship Tk without font antialiasing.
 
 ## Output format
 ```
