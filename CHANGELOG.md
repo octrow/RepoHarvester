@@ -5,7 +5,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-16
+
 ### Added
+- PyPI metadata: keywords, classifiers and project links (changelog, issues).
 - Release workflow: a pushed `vX.Y.Z` tag publishes to PyPI (trusted publishing) and creates the GitHub release.
 - Secret scanning (gitleaks) and workflow audit (zizmor) in CI, pre-commit config, Dependabot.
 
@@ -32,5 +35,6 @@ First release on PyPI.
 - Core rewritten as plain functions with a `HarvestOptions` parameter object; clone failures raise `CloneError`.
 
 [Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.2.1...HEAD
+[0.2.2]: https://github.com/octrow/RepoHarvester/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/octrow/RepoHarvester/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/octrow/RepoHarvester/releases/tag/v0.2.0
