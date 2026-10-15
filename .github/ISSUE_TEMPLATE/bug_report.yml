@@ -1,0 +1,31 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, what you got instead.
+      placeholder: repoharvester https://github.com/user/repo -r
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log output
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`pip show repoharvester` or the git commit"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python version
+      placeholder: Ubuntu 24.04, Python 3.12
+    validations:
+      required: true
