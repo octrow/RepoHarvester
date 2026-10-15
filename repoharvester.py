@@ -10,6 +10,7 @@ log = logging.getLogger("repoharvester")
 
 DEFAULT_MAX_SIZE_KB = 1000
 LARGE_FILE_KB = 500
+CHARS_PER_TOKEN = 4  # rough average for code and English text
 DEFAULT_OUTPUT_DIR = Path("output")
 
 # Matched against lowercased file extensions.
@@ -136,6 +137,15 @@ def write_union_file(files, root: Path, out_file: Path, repo_name: str, strip_co
     return skipped
 
 
+def git_visible_files(root: Path) -> set[str] | None:
+    """Tracked plus untracked-but-not-ignored files under root, or None if root is not in a git repo."""
+    result = subprocess.run(['git', '-C', str(root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+                            capture_output=True, text=True)
+    if result.returncode:
+        return None
+    return set(filter(None, result.stdout.split('\0')))
+
+
 def harvest(repo: str, output_dir: Path = DEFAULT_OUTPUT_DIR, strip_comments=False, skip_groups=None,
             exclude_folders=(), max_size_kb=DEFAULT_MAX_SIZE_KB) -> Path:
     """Harvest a git URL or local folder into <output_dir>/<name>_all_files.txt and return its path."""
@@ -155,10 +165,14 @@ def harvest(repo: str, output_dir: Path = DEFAULT_OUTPUT_DIR, strip_comments=Fal
                            check=True, stderr=subprocess.PIPE, text=True)
         files = collect_files(root, skip_groups, exclude_folders, max_size_kb)
         files = [f for f in files if not f.resolve().is_relative_to(output_dir.resolve())]
+        if (visible := git_visible_files(root)) is not None:
+            files = [f for f in files if f.relative_to(root).as_posix() in visible]
         skipped = write_union_file(files, root, out_file, repo_name, strip_comments)
 
     (output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in skipped), encoding='utf-8')
-    log.info("Wrote %d files to %s (%d non-UTF-8 skipped)", len(files) - len(skipped), out_file, len(skipped))
+    tokens_k = out_file.stat().st_size / CHARS_PER_TOKEN / 1000
+    log.info("Wrote %d files to %s, ~%.1fk tokens (%d non-UTF-8 skipped)",
+             len(files) - len(skipped), out_file, tokens_k, len(skipped))
     return out_file
 
 

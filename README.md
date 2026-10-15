@@ -1,5 +1,7 @@
 # RepoHarvester
 
+[![CI](https://github.com/octrow/RepoHarvester/actions/workflows/ci.yml/badge.svg)](https://github.com/octrow/RepoHarvester/actions/workflows/ci.yml)
+
 Clone a git repository (or point at a local folder) and compile all of its text files into one file. Handy for feeding a codebase to an LLM, code review, or offline reading.
 
 ## Features
@@ -7,6 +9,8 @@ Clone a git repository (or point at a local folder) and compile all of its text 
 - Skips binary/noise by default: media, archives, executables, lock files, `node_modules`, virtualenvs, caches, `.git`, `.github`, and more.
 - Optional comment removal for common languages. String literals are kept, so `"http://..."` and `"#fff"` stay intact.
 - Size limit per file. Non-UTF-8 files are skipped and listed in `skipped_files.txt`.
+- Respects `.gitignore`: in a git repo only tracked and untracked-but-not-ignored files are harvested.
+- Logs a rough token estimate (~4 characters per token) so you know if it fits an LLM context.
 - Each file is headed by its path relative to the repo root. The output folder is never harvested into itself.
 - No runtime dependencies. The GUI is optional.
 

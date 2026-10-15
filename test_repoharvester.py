@@ -1,3 +1,5 @@
+import logging
+import subprocess
 from pathlib import Path
 
 from repoharvester import collect_files, get_repo_name, harvest, main, remove_comments
@@ -55,3 +57,31 @@ def test_cli_lists_do_not_swallow_repo(tmp_path: Path):
     harvested = (tmp_path / 'o' / 'src_all_files.txt').read_text()
     assert '### k.txt' in harvested
     assert 'd.txt' not in harvested
+
+
+def test_git_repo_respects_gitignore(tmp_path: Path):
+    src = tmp_path / 'proj'
+    (src / 'dist').mkdir(parents=True)
+    (src / 'dist' / 'bundle.js').write_text('built')
+    (src / '.env').write_text('SECRET=1')
+    (src / '.gitignore').write_text('dist/\n.env\n')
+    (src / 'app.py').write_text('x = 1\n')
+    (src / 'new.py').write_text('untracked but not ignored\n')
+    subprocess.run(['git', 'init', '-q', str(src)], check=True)
+    subprocess.run(['git', '-C', str(src), 'add', 'app.py', '.gitignore'], check=True)
+
+    text = harvest(str(src), tmp_path / 'out').read_text()
+
+    assert '### app.py' in text
+    assert '### new.py' in text
+    assert 'dist/bundle.js' not in text
+    assert '### .env' not in text
+    assert 'SECRET' not in text
+
+
+def test_harvest_logs_token_estimate(tmp_path: Path, caplog):
+    (tmp_path / 'src').mkdir()
+    (tmp_path / 'src' / 'a.txt').write_text('x' * 4000)
+    with caplog.at_level(logging.INFO, logger='repoharvester'):
+        harvest(str(tmp_path / 'src'), tmp_path / 'out')
+    assert '~1.0k tokens' in caplog.text
