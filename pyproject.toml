@@ -1,11 +1,28 @@
 [project]
 name = "repoharvester"
 version = "0.2.1"
-description = "Clone a git repo (or read a folder) and compile its text files into a single file"
+description = "Clone a git repo or read a folder and compile its text files into one file for LLM context. CLI plus optional GUI, no dependencies."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
+keywords = ["llm", "llm-context", "prompt", "chatgpt", "claude", "git", "repository", "code-to-text", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/octrow/RepoHarvester"
+Changelog = "https://github.com/octrow/RepoHarvester/blob/main/CHANGELOG.md"
+Issues = "https://github.com/octrow/RepoHarvester/issues"
 
 [project.optional-dependencies]
 gui = ["customtkinter>=5.2"]
