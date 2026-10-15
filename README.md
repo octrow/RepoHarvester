@@ -1,8 +1,21 @@
 # RepoHarvester
 
 [![CI](https://github.com/octrow/RepoHarvester/actions/workflows/ci.yml/badge.svg)](https://github.com/octrow/RepoHarvester/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/repoharvester)](https://pypi.org/project/repoharvester/)
+[![Python](https://img.shields.io/pypi/pyversions/repoharvester)](https://pypi.org/project/repoharvester/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Clone a git repository (or point at a local folder) and compile all of its text files into one file. Handy for feeding a codebase to an LLM, code review, or offline reading.
+**English** | [Русский](README.ru.md)
+
+Clone a git repository (or point at a local folder) and get all of its text files in one file. Paste it into ChatGPT or Claude as LLM context, search it, review it, or read it offline. A command-line tool plus an optional GUI. No runtime dependencies.
+
+```shell
+uvx repoharvester https://github.com/psf/requests
+```
+```
+Cloning https://github.com/psf/requests
+Wrote 92 files to output/requests_all_files.txt, ~154.7k tokens (0 non-UTF-8 skipped)
+```
 
 ## Features
 - Works with SSH/HTTPS git URLs (shallow clone into a temp dir) or local folders.
@@ -18,7 +31,8 @@ Clone a git repository (or point at a local folder) and compile all of its text 
 Requires Python 3.12+ and git.
 
 ```shell
-uv tool install repoharvester   # or: pipx install repoharvester / uv run repoharvester ... from a clone
+uv tool install repoharvester            # or: pipx install repoharvester
+uv tool install "repoharvester[gui]"     # with the GUI
 ```
 
 ## Usage
@@ -44,9 +58,12 @@ repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-
 
 ## GUI
 ```shell
-uv tool install 'repoharvester[gui]'   # then: repoharvester-gui
-uv run --extra gui repoharvester-gui    # from a clone
+repoharvester-gui                         # after installing with [gui]
+uv run --extra gui repoharvester-gui      # from a clone
 ```
+
+<img src="docs/gui.png" width="520" alt="RepoHarvester window: repository URL and output folder fields, max file size, skip folders, a strip-comments checkbox, a grid of file groups to include, and a Harvest button above an empty log">
+
 Paste a git URL or choose a folder, tick anything extra to include, press **Harvest** (or Enter), then **Open file**.
 While a clone runs the button turns into **Cancel**. Settings are remembered in `~/.config/repoharvester/gui.json`.
 On Linux the project prefers the system Python: uv's bundled builds ship Tk without font antialiasing.
@@ -61,7 +78,16 @@ On Linux the project prefers the system Python: uv's bundled builds ship Tk with
 ```
 Written to `<output-dir>/<repo-name>_all_files.txt`, with `skipped_files.txt` next to it.
 
+## Alternatives
+- [repomix](https://github.com/yamadashy/repomix) (Node.js): more output formats, exact token counts, many more options. Pick it if you have Node and want those.
+- [gitingest](https://github.com/coderamp-labs/gitingest) (Python): also has a website where you swap `hub` for `ingest` in a GitHub URL.
+- [files-to-prompt](https://github.com/simonw/files-to-prompt) (Python): local files and folders, no cloning.
+
+RepoHarvester is a single standard-library module: nothing to install besides Python and git, plus a small desktop GUI if you prefer clicking.
+
 ## Development
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ```shell
 uv run --group dev pytest
 uvx ruff check .
