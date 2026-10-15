@@ -77,13 +77,10 @@ COMMENT_PATTERNS = {
 _COMPILED = {ext: re.compile(p) for ext, p in COMMENT_PATTERNS.items()}
 
 
-def _remove_python_comments(content: str) -> str | None:
-    """Exact removal via the tokenizer; None if the code does not tokenize."""
-    try:
-        comments = [t for t in tokenize.generate_tokens(io.StringIO(content).readline)
-                    if t.type == tokenize.COMMENT and not (t.start == (1, 0) and t.string.startswith('#!'))]
-    except (tokenize.TokenError, SyntaxError):
-        return None
+def _remove_python_comments(content: str) -> str:
+    """Exact removal via the tokenizer; raises TokenError/SyntaxError if the code does not tokenize."""
+    comments = [t for t in tokenize.generate_tokens(io.StringIO(content).readline)
+                if t.type == tokenize.COMMENT and not (t.start == (1, 0) and t.string.startswith('#!'))]
     lines = content.splitlines(keepends=True)
     for tok in reversed(comments):  # right to left keeps earlier columns valid
         (row, start), (_, end) = tok.start, tok.end
@@ -93,8 +90,11 @@ def _remove_python_comments(content: str) -> str | None:
 
 def remove_comments(content: str, extension: str) -> str:
     """Strip comments for known languages; string literals are preserved."""
-    if extension.lower() == 'py' and (stripped := _remove_python_comments(content)) is not None:
-        return stripped
+    if extension.lower() == 'py':
+        try:
+            return _remove_python_comments(content)
+        except (tokenize.TokenError, SyntaxError):
+            pass  # not valid Python: the regex below still strips most comments
     pattern = _COMPILED.get(extension.lower())
     if not pattern:
         return content
@@ -176,26 +176,29 @@ def write_union_file(files: list[Path], root: Path, out_file: Path, options: Har
     return skipped
 
 
-def git_visible_files(root: Path) -> set[str] | None:
-    """Tracked plus untracked-but-not-ignored files under root, or None if root is not in a git repo."""
+def _drop_git_ignored(root: Path, files: list[Path]) -> list[Path]:
+    """Keep files git would show (tracked + untracked-not-ignored); all files if root is not in a git repo."""
     result = subprocess.run(['git', '-C', str(root), 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
                             capture_output=True, text=True)
     if result.returncode:
-        return None
-    return set(filter(None, result.stdout.split('\0')))
+        return files
+    visible = set(filter(None, result.stdout.split('\0')))
+    return [f for f in files if f.relative_to(root).as_posix() in visible]
 
 
 def _select_files(root: Path, options: HarvestOptions) -> list[Path]:
     """collect_files minus the output folder and anything git ignores."""
     output = options.output_dir.resolve()
     files = [f for f in collect_files(root, options) if not f.resolve().is_relative_to(output)]
-    if (visible := git_visible_files(root)) is None:
-        return files
-    return [f for f in files if f.relative_to(root).as_posix() in visible]
+    return _drop_git_ignored(root, files)
 
 
 class HarvestCancelled(Exception):
     """The cancel event was set while the repository was being cloned."""
+
+
+class CloneError(Exception):
+    """git clone failed; the message is one readable line naming the repo and git's reason."""
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -220,7 +223,7 @@ def _clone(repo: str, dest: Path, cancel: threading.Event | None) -> None:
                     _kill_tree(proc)
                     raise HarvestCancelled from None
     if proc.returncode:
-        raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr)
+        raise CloneError(_clone_failure(repo, proc.returncode, stderr))
 
 
 def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS, cancel: threading.Event | None = None) -> Path:
@@ -242,16 +245,18 @@ def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS, cancel: thread
         skipped = write_union_file(files, root, out_file, options)
 
     (options.output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in skipped), encoding='utf-8')
-    tokens_k = out_file.stat().st_size / CHARS_PER_TOKEN / 1000
-    log.info("Wrote %d files to %s, ~%.1fk tokens (%d non-UTF-8 skipped)",
-             len(files) - len(skipped), out_file, tokens_k, len(skipped))
+    _report(out_file, len(files) - len(skipped), len(skipped))
     return out_file
 
 
-def clone_error(e: subprocess.CalledProcessError) -> str:
-    """One readable line from a failed git clone."""
-    first = next((line.strip() for line in (e.stderr or '').splitlines() if line.strip()), None)
-    return f'git clone failed: {first or f"exit code {e.returncode}"}'
+def _report(out_file: Path, written: int, skipped: int) -> None:
+    tokens_k = out_file.stat().st_size / CHARS_PER_TOKEN / 1000
+    log.info("Wrote %d files to %s, ~%.1fk tokens (%d non-UTF-8 skipped)", written, out_file, tokens_k, skipped)
+
+
+def _clone_failure(repo: str, returncode: int, stderr: str) -> str:
+    first = next((line.strip() for line in (stderr or '').splitlines() if line.strip()), None)
+    return f'git clone of {repo} failed: {first or f"exit code {returncode}"}'
 
 
 def _csv(value: str) -> list[str]:
@@ -290,8 +295,8 @@ def main(argv=None):
                              tuple(args.exclude), args.max_size)
     try:
         out = harvest(args.repo, options)
-    except subprocess.CalledProcessError as e:
-        parser.exit(1, f'{clone_error(e)}\n')
+    except CloneError as e:
+        parser.exit(1, f'{e}\n')
     print(f'All files have been written to {out}')
 
 

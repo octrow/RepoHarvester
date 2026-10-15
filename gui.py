@@ -19,7 +19,6 @@ from repoharvester import (
     DEFAULT_OUTPUT_DIR,
     HarvestCancelled,
     HarvestOptions,
-    clone_error,
     harvest,
 )
 
@@ -50,6 +49,18 @@ MONO = ("Ubuntu Sans Mono", "Ubuntu Mono", "Noto Sans Mono", "DejaVu Sans Mono")
 def _first_installed(candidates: tuple[str, ...]) -> str:
     installed = set(tkfont.families())
     return next((f for f in candidates if f in installed), "TkDefaultFont")
+
+
+def _make_fonts() -> dict[str, ctk.CTkFont]:
+    """Type scale: 22 title, 13 body, 11 small; mono only for the log. Needs a Tk root."""
+    sans, mono = _first_installed(SANS), _first_installed(MONO)
+    return {
+        "title": ctk.CTkFont(sans, 22, "bold"),
+        "body": ctk.CTkFont(sans, 13),
+        "strong": ctk.CTkFont(sans, 13, "bold"),
+        "small": ctk.CTkFont(sans, 11),
+        "log": ctk.CTkFont(mono, 12),
+    }
 
 
 def _load_settings() -> dict:
@@ -92,14 +103,7 @@ class App(ctk.CTk):
         self.title("RepoHarvester")
         self.geometry("720x780")
         self.minsize(600, 660)
-        sans, mono = _first_installed(SANS), _first_installed(MONO)
-        self.fonts = {
-            "title": ctk.CTkFont(sans, 22, "bold"),
-            "body": ctk.CTkFont(sans, 13),
-            "strong": ctk.CTkFont(sans, 13, "bold"),
-            "small": ctk.CTkFont(sans, 11),
-            "log": ctk.CTkFont(mono, 12),
-        }
+        self.fonts = _make_fonts()
         # str = log line; callable = completion step the worker hands to the Tk thread.
         self.messages: queue.Queue[str | Callable[[], None]] = queue.Queue()
         self.result: Path | None = None
@@ -279,11 +283,8 @@ class App(ctk.CTk):
             result = harvest(repo, options, cancel)
         except HarvestCancelled:
             self.messages.put(self._cancelled)
-        except subprocess.CalledProcessError as e:
-            error = clone_error(e)
-            self.messages.put(lambda: self._failed(error))
-        except Exception as e:  # any other failure is shown, not swallowed
-            error = str(e)
+        except Exception as e:  # CloneError and anything else: shown, not swallowed
+            error = str(e) or type(e).__name__
             self.messages.put(lambda: self._failed(error))
         else:
             self.messages.put(lambda: self._succeeded(result))

@@ -6,7 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from repoharvester import HarvestCancelled, HarvestOptions, collect_files, get_repo_name, harvest, main, remove_comments
+from repoharvester import (
+    CloneError,
+    HarvestCancelled,
+    HarvestOptions,
+    collect_files,
+    get_repo_name,
+    harvest,
+    main,
+    remove_comments,
+)
 
 
 def test_remove_comments_keeps_strings():
@@ -111,6 +120,6 @@ def test_failed_clone_keeps_previous_result(tmp_path: Path):
     previous = tmp_path / 'out' / 'y_all_files.txt'
     previous.parent.mkdir()
     previous.write_text('good result')
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(CloneError, match=r'y\.git'):
         harvest(str(tmp_path / 'missing' / 'y.git'), HarvestOptions(tmp_path / 'out'))
     assert previous.read_text() == 'good result'
