@@ -5,6 +5,7 @@ import queue
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import filedialog
 from tkinter import font as tkfont
@@ -71,16 +72,20 @@ class App(ctk.CTk):
             "small": ctk.CTkFont(sans, 11),
             "log": ctk.CTkFont(mono, 12),
         }
-        # str = log line; tuple = ("done", Path) or ("error", str) from the worker.
-        self.messages: queue.Queue[str | tuple] = queue.Queue()
+        # str = log line; callable = completion step the worker hands to the Tk thread.
+        self.messages: queue.Queue[str | Callable[[], None]] = queue.Queue()
         self.result: Path | None = None
-        handler = QueueHandler(self.messages)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        logging.getLogger("repoharvester").addHandler(handler)
-        logging.getLogger("repoharvester").setLevel(logging.INFO)
+        self._capture_log()
         self._build()
         self.bind("<Return>", lambda _e: self._start())
         self.after(POLL_MS, self._drain)
+
+    def _capture_log(self) -> None:
+        handler = QueueHandler(self.messages)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger = logging.getLogger("repoharvester")
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
     # --- layout ---------------------------------------------------------
 
@@ -90,24 +95,28 @@ class App(ctk.CTk):
         ctk.CTkLabel(self, text="Turn a repository into one text file you can read, search or paste.",
                      font=self.fonts["body"], text_color=MUTED).pack(anchor="w", padx=GUTTER, pady=(0, GAP))
 
-        source = self._card()
-        self.repo = self._field(source, "Repository", "git@github.com:user/repo.git or a local folder", True)
-        self.out_dir = self._field(source, "Save to", "", True)
-        self.out_dir.insert(0, str(DEFAULT_OUTPUT_DIR))
-        self._spacer(source)
-
-        filters = self._card()
-        self.max_size = self._field(filters, "Max file size", "KB")
-        self.max_size.insert(0, str(DEFAULT_MAX_SIZE_KB))
-        self.exclude = self._field(filters, "Skip folders", "vendor, docs")
-        self.strip = ctk.BooleanVar(value=False)
-        self._checkbox(filters, "Strip code comments", self.strip).pack(anchor="w", padx=GAP, pady=GAP)
-
+        self._build_source()
+        self._build_filters()
         self._build_groups()
         self._build_actions()
         self.log = ctk.CTkTextbox(self, font=self.fonts["log"], fg_color=LOG_BG, text_color=LOG_INK,
                                   corner_radius=6, wrap="word", state="disabled")
         self.log.pack(fill="both", expand=True, padx=GUTTER, pady=(0, GUTTER))
+
+    def _build_source(self) -> None:
+        card = self._card()
+        self.repo = self._folder_field(card, "Repository", "git@github.com:user/repo.git or a local folder")
+        self.out_dir = self._folder_field(card, "Save to", "")
+        self.out_dir.insert(0, str(DEFAULT_OUTPUT_DIR))
+        self._spacer(card)
+
+    def _build_filters(self) -> None:
+        card = self._card()
+        self.max_size = self._field(card, "Max file size", "KB")
+        self.max_size.insert(0, str(DEFAULT_MAX_SIZE_KB))
+        self.exclude = self._field(card, "Skip folders", "vendor, docs")
+        self.strip = ctk.BooleanVar(value=False)
+        self._checkbox(card, "Strip code comments", self.strip).pack(anchor="w", padx=GAP, pady=GAP)
 
     def _build_groups(self) -> None:
         card = self._card()
@@ -141,7 +150,7 @@ class App(ctk.CTk):
     def _spacer(self, card: ctk.CTkFrame) -> None:
         ctk.CTkFrame(card, height=GAP, width=1, fg_color="transparent").pack()
 
-    def _field(self, card: ctk.CTkFrame, label: str, hint: str, browse: bool = False) -> ctk.CTkEntry:
+    def _field(self, card: ctk.CTkFrame, label: str, hint: str) -> ctk.CTkEntry:
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=GAP, pady=(GAP, 0))
         ctk.CTkLabel(row, text=label, width=LABEL_WIDTH, anchor="w", font=self.fonts["body"],
@@ -149,8 +158,12 @@ class App(ctk.CTk):
         entry = ctk.CTkEntry(row, placeholder_text=hint, font=self.fonts["body"], border_color=LINE,
                              border_width=1, fg_color=FIELD, text_color=INK, corner_radius=6)
         entry.pack(side="left", fill="x", expand=True)
-        if browse:
-            self._secondary(row, "Choose folder", lambda: self._pick_dir(entry)).pack(side="left", padx=(GAP, 0))
+        return entry
+
+    def _folder_field(self, card: ctk.CTkFrame, label: str, hint: str) -> ctk.CTkEntry:
+        entry = self._field(card, label, hint)
+        button = self._secondary(entry.master, "Choose folder", lambda: self._pick_dir(entry))
+        button.pack(side="left", padx=(GAP, 0))
         return entry
 
     def _checkbox(self, parent, text: str, var: ctk.BooleanVar) -> ctk.CTkCheckBox:
@@ -203,30 +216,35 @@ class App(ctk.CTk):
     def _run(self, repo: str, **kwargs) -> None:
         """Worker thread: never touches Tk, only the queue."""
         try:
-            self.messages.put(("done", harvest(repo, **kwargs)))
+            result = harvest(repo, **kwargs)
         except subprocess.CalledProcessError as e:
-            self.messages.put(("error", clone_error(e)))
+            error = clone_error(e)
+            self.messages.put(lambda: self._failed(error))
         except Exception as e:  # any other failure is shown, not swallowed
-            self.messages.put(("error", str(e)))
+            error = str(e)
+            self.messages.put(lambda: self._failed(error))
+        else:
+            self.messages.put(lambda: self._succeeded(result))
 
     def _drain(self) -> None:
         while not self.messages.empty():
             message = self.messages.get()
-            if isinstance(message, tuple):
-                self._finish(*message)
+            if callable(message):
+                message()
             else:
                 self._append_log(message)
         self.after(POLL_MS, self._drain)
 
-    def _finish(self, kind: str, value) -> None:
+    def _succeeded(self, result: Path) -> None:
         self.start.configure(state="normal", text="Harvest")
-        if kind == "error":
-            self._set_status(value, ERROR)
-            self._append_log(value)
-            return
-        self.result = value
-        self._set_status(f"Saved {value.name}", INK)
+        self.result = result
+        self._set_status(f"Saved {result.name}", INK)
         self.open_button.pack(side="right", before=self.status)
+
+    def _failed(self, error: str) -> None:
+        self.start.configure(state="normal", text="Harvest")
+        self._set_status(error, ERROR)
+        self._append_log(error)
 
     def _append_log(self, line: str) -> None:
         self.log.configure(state="normal")
