@@ -85,11 +85,11 @@ class App(ctk.CTk):
         if not self.max_size.get().strip().isdigit():
             self.messages.put("Max file size must be a whole number")
             return
-        kwargs = self._options()
+        kwargs = self._form_values()
         self.start.configure(state="disabled")
         threading.Thread(target=self._run, args=(repo,), kwargs=kwargs, daemon=True).start()
 
-    def _options(self) -> dict:
+    def _form_values(self) -> dict:
         """Read the form into harvest() keyword arguments."""
         return {
             "output_dir": Path(self.out_dir.get() or DEFAULT_OUTPUT_DIR),
