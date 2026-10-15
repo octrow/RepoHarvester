@@ -6,3 +6,10 @@ venv/
 .agents/
 .claude/
 skills-lock.json
+.env
+.env.*
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
