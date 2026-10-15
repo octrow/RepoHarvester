@@ -34,7 +34,7 @@ First release on PyPI.
 - Python comments are removed with the tokenizer; string literals are kept in every language.
 - Core rewritten as plain functions with a `HarvestOptions` parameter object; clone failures raise `CloneError`.
 
-[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.2.2...HEAD
 [0.2.2]: https://github.com/octrow/RepoHarvester/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/octrow/RepoHarvester/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/octrow/RepoHarvester/releases/tag/v0.2.0
