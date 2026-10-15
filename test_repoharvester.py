@@ -1,8 +1,12 @@
 import logging
 import subprocess
+import threading
+import time
 from pathlib import Path
 
-from repoharvester import HarvestOptions, collect_files, get_repo_name, harvest, main, remove_comments
+import pytest
+
+from repoharvester import HarvestCancelled, HarvestOptions, collect_files, get_repo_name, harvest, main, remove_comments
 
 
 def test_remove_comments_keeps_strings():
@@ -85,3 +89,28 @@ def test_harvest_logs_token_estimate(tmp_path: Path, caplog):
     with caplog.at_level(logging.INFO, logger='repoharvester'):
         harvest(str(tmp_path / 'src'), HarvestOptions(tmp_path / 'out'))
     assert '~1.0k tokens' in caplog.text
+
+
+def test_python_comments_use_tokenizer():
+    src = '#!/usr/bin/env python\nx = f"{a}#b"  # c\ns = """\n# kept\n"""\n'
+    assert remove_comments(src, 'py') == '#!/usr/bin/env python\nx = f"{a}#b"  \ns = """\n# kept\n"""\n'
+    assert remove_comments('x = (  # broken python\n', 'py') == 'x = (  \n'
+
+
+def test_cancel_stops_a_hanging_clone(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv('GIT_SSH_COMMAND', 'sleep 30; true')
+    cancel = threading.Event()
+    threading.Timer(0.5, cancel.set).start()
+    started = time.monotonic()
+    with pytest.raises(HarvestCancelled):
+        harvest('git@example.invalid:x/y.git', HarvestOptions(tmp_path / 'out'), cancel)
+    assert time.monotonic() - started < 5
+
+
+def test_failed_clone_keeps_previous_result(tmp_path: Path):
+    previous = tmp_path / 'out' / 'y_all_files.txt'
+    previous.parent.mkdir()
+    previous.write_text('good result')
+    with pytest.raises(subprocess.CalledProcessError):
+        harvest(str(tmp_path / 'missing' / 'y.git'), HarvestOptions(tmp_path / 'out'))
+    assert previous.read_text() == 'good result'

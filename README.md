@@ -7,7 +7,7 @@ Clone a git repository (or point at a local folder) and compile all of its text 
 ## Features
 - Works with SSH/HTTPS git URLs (shallow clone into a temp dir) or local folders.
 - Skips binary/noise by default: media, archives, executables, lock files, `node_modules`, virtualenvs, caches, `.git`, `.github`, and more.
-- Optional comment removal for common languages. String literals are kept, so `"http://..."` and `"#fff"` stay intact.
+- Optional comment removal for common languages. String literals are kept, so `"http://..."` and `"#fff"` stay intact. Python uses the real tokenizer; other languages use regexes.
 - Size limit per file. Non-UTF-8 files are skipped and listed in `skipped_files.txt`.
 - Respects `.gitignore`: in a git repo only tracked and untracked-but-not-ignored files are harvested.
 - Logs a rough token estimate (~4 characters per token) so you know if it fits an LLM context.
@@ -47,6 +47,7 @@ repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-
 uv run --extra gui python gui.py
 ```
 Paste a git URL or choose a folder, tick anything extra to include, press **Harvest** (or Enter), then **Open file**.
+While a clone runs the button turns into **Cancel**. Settings are remembered in `~/.config/repoharvester/gui.json`.
 On Linux the project prefers the system Python: uv's bundled builds ship Tk without font antialiasing.
 
 ## Output format

@@ -1,4 +1,5 @@
 """customtkinter front-end for repoharvester."""
+import json
 import logging
 import os
 import queue
@@ -12,9 +13,18 @@ from tkinter import font as tkfont
 
 import customtkinter as ctk
 
-from repoharvester import ALL_GROUPS, DEFAULT_MAX_SIZE_KB, DEFAULT_OUTPUT_DIR, HarvestOptions, clone_error, harvest
+from repoharvester import (
+    ALL_GROUPS,
+    DEFAULT_MAX_SIZE_KB,
+    DEFAULT_OUTPUT_DIR,
+    HarvestCancelled,
+    HarvestOptions,
+    clone_error,
+    harvest,
+)
 
 POLL_MS = 100
+SETTINGS_FILE = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "repoharvester" / "gui.json"
 GUTTER = 20
 GAP = 10
 GROUP_COLUMNS = 3
@@ -40,6 +50,24 @@ MONO = ("Ubuntu Sans Mono", "Ubuntu Mono", "Noto Sans Mono", "DejaVu Sans Mono")
 def _first_installed(candidates: tuple[str, ...]) -> str:
     installed = set(tkfont.families())
     return next((f for f in candidates if f in installed), "TkDefaultFont")
+
+
+def _load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        logging.getLogger("repoharvester").warning("Ignoring unreadable settings %s: %s", SETTINGS_FILE, e)
+        return {}
+
+
+def _save_settings(settings: dict) -> None:
+    try:
+        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    except OSError as e:
+        logging.getLogger("repoharvester").warning("Could not save settings %s: %s", SETTINGS_FILE, e)
 
 
 def _open_file(path: Path) -> None:
@@ -75,8 +103,10 @@ class App(ctk.CTk):
         # str = log line; callable = completion step the worker hands to the Tk thread.
         self.messages: queue.Queue[str | Callable[[], None]] = queue.Queue()
         self.result: Path | None = None
+        self.cancel: threading.Event | None = None  # set while a harvest is running
         self._capture_log()
         self._build()
+        self._apply_settings(_load_settings())
         self.bind("<Return>", lambda _e: self._start())
         self.after(POLL_MS, self._drain)
 
@@ -134,7 +164,7 @@ class App(ctk.CTk):
     def _build_actions(self) -> None:
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=GUTTER, pady=(0, GAP))
-        self.start = ctk.CTkButton(row, text="Harvest", command=self._start, height=40, width=150,
+        self.start = ctk.CTkButton(row, text="Harvest", command=self._on_harvest_button, height=40, width=150,
                                    font=self.fonts["strong"], fg_color=WHEAT, hover_color=WHEAT_HOVER,
                                    text_color=ON_WHEAT, text_color_disabled=ON_WHEAT, corner_radius=6)
         self.start.pack(side="left")
@@ -187,8 +217,15 @@ class App(ctk.CTk):
     def _set_status(self, text: str, color=MUTED) -> None:
         self.status.configure(text=text, text_color=color)
 
+    def _on_harvest_button(self) -> None:
+        if self.cancel is None:
+            self._start()
+            return
+        self.cancel.set()
+        self.start.configure(state="disabled", text="Cancelling…")
+
     def _start(self) -> None:
-        if self.start.cget("state") == "disabled":
+        if self.cancel is not None:
             return
         repo = self.repo.get().strip()
         if not repo:
@@ -198,10 +235,12 @@ class App(ctk.CTk):
             self._set_status("Max file size must be a whole number of KB.", ERROR)
             return
         options = self._form_values()
-        self.start.configure(state="disabled", text="Harvesting…")
+        _save_settings(self._settings())
+        self.cancel = threading.Event()
+        self.start.configure(text="Cancel")
         self.open_button.pack_forget()
         self._set_status(f"Harvesting {repo}")
-        threading.Thread(target=self._run, args=(repo, options), daemon=True).start()
+        threading.Thread(target=self._run, args=(repo, options, self.cancel), daemon=True).start()
 
     def _form_values(self) -> HarvestOptions:
         """Read the form into harvest() options."""
@@ -213,10 +252,33 @@ class App(ctk.CTk):
             max_size_kb=int(self.max_size.get()),
         )
 
-    def _run(self, repo: str, options: HarvestOptions) -> None:
+    def _settings(self) -> dict:
+        return {
+            "repo": self.repo.get().strip(),
+            "output_dir": self.out_dir.get().strip(),
+            "max_size_kb": self.max_size.get().strip(),
+            "exclude": self.exclude.get().strip(),
+            "strip_comments": self.strip.get(),
+            "include": sorted(g for g, var in self.include.items() if var.get()),
+        }
+
+    def _apply_settings(self, settings: dict) -> None:
+        for entry, key in ((self.repo, "repo"), (self.out_dir, "output_dir"),
+                           (self.max_size, "max_size_kb"), (self.exclude, "exclude")):
+            if settings.get(key):
+                entry.delete(0, "end")
+                entry.insert(0, str(settings[key]))
+        self.strip.set(bool(settings.get("strip_comments")))
+        for group in settings.get("include", []):
+            if group in self.include:
+                self.include[group].set(True)
+
+    def _run(self, repo: str, options: HarvestOptions, cancel: threading.Event) -> None:
         """Worker thread: never touches Tk, only the queue."""
         try:
-            result = harvest(repo, options)
+            result = harvest(repo, options, cancel)
+        except HarvestCancelled:
+            self.messages.put(self._cancelled)
         except subprocess.CalledProcessError as e:
             error = clone_error(e)
             self.messages.put(lambda: self._failed(error))
@@ -235,14 +297,23 @@ class App(ctk.CTk):
                 self._append_log(message)
         self.after(POLL_MS, self._drain)
 
-    def _succeeded(self, result: Path) -> None:
+    def _idle(self) -> None:
+        self.cancel = None
         self.start.configure(state="normal", text="Harvest")
+
+    def _cancelled(self) -> None:
+        self._idle()
+        self._set_status("Cancelled. Nothing was saved.")
+        self._append_log("Cancelled")
+
+    def _succeeded(self, result: Path) -> None:
+        self._idle()
         self.result = result
         self._set_status(f"Saved {result.name}", INK)
         self.open_button.pack(side="right", before=self.status)
 
     def _failed(self, error: str) -> None:
-        self.start.configure(state="normal", text="Harvest")
+        self._idle()
         self._set_status(error, ERROR)
         self._append_log(error)
 

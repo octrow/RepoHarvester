@@ -1,9 +1,14 @@
 """Clone a git repository (or read a local folder) and compile its text files into one file."""
 import argparse
+import io
 import logging
+import os
 import re
+import signal
 import subprocess
 import tempfile
+import threading
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +17,7 @@ log = logging.getLogger("repoharvester")
 DEFAULT_MAX_SIZE_KB = 1000
 LARGE_FILE_KB = 500
 CHARS_PER_TOKEN = 4  # rough average for code and English text
+CANCEL_POLL_S = 0.2
 DEFAULT_OUTPUT_DIR = Path("output")
 
 # Matched against lowercased file extensions.
@@ -71,8 +77,24 @@ COMMENT_PATTERNS = {
 _COMPILED = {ext: re.compile(p) for ext, p in COMMENT_PATTERNS.items()}
 
 
+def _remove_python_comments(content: str) -> str | None:
+    """Exact removal via the tokenizer; None if the code does not tokenize."""
+    try:
+        comments = [t for t in tokenize.generate_tokens(io.StringIO(content).readline)
+                    if t.type == tokenize.COMMENT and not (t.start == (1, 0) and t.string.startswith('#!'))]
+    except (tokenize.TokenError, SyntaxError):
+        return None
+    lines = content.splitlines(keepends=True)
+    for tok in reversed(comments):  # right to left keeps earlier columns valid
+        (row, start), (_, end) = tok.start, tok.end
+        lines[row - 1] = lines[row - 1][:start] + lines[row - 1][end:]
+    return ''.join(lines)
+
+
 def remove_comments(content: str, extension: str) -> str:
     """Strip comments for known languages; string literals are preserved."""
+    if extension.lower() == 'py' and (stripped := _remove_python_comments(content)) is not None:
+        return stripped
     pattern = _COMPILED.get(extension.lower())
     if not pattern:
         return content
@@ -172,24 +194,50 @@ def _select_files(root: Path, options: HarvestOptions) -> list[Path]:
     return [f for f in files if f.relative_to(root).as_posix() in visible]
 
 
-def _clone(repo: str, dest: Path) -> None:
+class HarvestCancelled(Exception):
+    """The cancel event was set while the repository was being cloned."""
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Kill git and its children (ssh), which would otherwise keep the pipe open."""
+    if os.name == 'posix':
+        os.killpg(proc.pid, signal.SIGKILL)
+    else:
+        proc.kill()
+    proc.communicate()
+
+
+def _clone(repo: str, dest: Path, cancel: threading.Event | None) -> None:
     log.info("Cloning %s", repo)
-    subprocess.run(['git', 'clone', '--depth', '1', '--quiet', repo, str(dest)],
-                   check=True, stderr=subprocess.PIPE, text=True)
+    cmd = ['git', 'clone', '--depth', '1', '--quiet', repo, str(dest)]
+    with subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True, start_new_session=True) as proc:
+        while True:
+            try:
+                _, stderr = proc.communicate(timeout=CANCEL_POLL_S)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel and cancel.is_set():
+                    _kill_tree(proc)
+                    raise HarvestCancelled from None
+    if proc.returncode:
+        raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr)
 
 
-def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS) -> Path:
-    """Harvest a git URL or local folder into <output_dir>/<name>_all_files.txt and return its path."""
+def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS, cancel: threading.Event | None = None) -> Path:
+    """Harvest a git URL or local folder into <output_dir>/<name>_all_files.txt and return its path.
+
+    Setting `cancel` aborts a running clone with HarvestCancelled.
+    """
     options.output_dir.mkdir(parents=True, exist_ok=True)
     local = Path(repo).expanduser()
     repo_name = local.resolve().name if local.is_dir() else get_repo_name(repo)
     out_file = options.output_dir / f'{repo_name}_all_files.txt'
-    out_file.write_text(f'## {repo_name}\n', encoding='utf-8')
 
     with tempfile.TemporaryDirectory(prefix='repoharvester_') as tmp:
         root = local if local.is_dir() else Path(tmp)
         if root != local:
-            _clone(repo, root)
+            _clone(repo, root, cancel)
+        out_file.write_text(f'## {repo_name}\n', encoding='utf-8')  # only now: a failed clone keeps the old result
         files = _select_files(root, options)
         skipped = write_union_file(files, root, out_file, options)
 
