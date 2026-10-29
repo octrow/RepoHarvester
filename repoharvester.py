@@ -27,7 +27,7 @@ DEFAULT_OUTPUT_DIR = Path("output")
 EXTENSION_GROUPS = {
     'media': {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'svg', 'ico', 'raw', 'psd', 'ai', 'webp'},
     'office': {'xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt', 'pdf'},
-    'system': {'pack', 'idx', 'ds_store', 'sys', 'ini', 'bat', 'plist'},
+    'system': {'pack', 'idx', 'sys', 'ini', 'bat', 'plist'},
     'executables': {'exe', 'dll', 'so', 'bin', 'dylib'},
     'archive': {'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'},
     'audio': {'mp3', 'wav', 'aac', 'flac', 'ogg'},
@@ -45,6 +45,7 @@ EXTENSION_GROUPS = {
 FILENAME_GROUPS = {
     'package_locks': {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Gemfile.lock',
                       'poetry.lock', 'uv.lock', 'Cargo.lock', 'composer.lock'},
+    'system': {'.DS_Store'},
 }
 # Matched against directory names; contents are never walked.
 FOLDER_GROUPS = {
