@@ -192,3 +192,12 @@ def test_log_and_header_report_the_same_token_total(tmp_path: Path, caplog):
 def test_python_comments_with_form_feed_line():
     src = 'x = 1\n\x0c\n# comment\ny = 2\n'
     assert remove_comments(src, 'py') == 'x = 1\n\x0c\n\ny = 2\n'
+
+
+def test_ds_store_is_skipped_by_default(tmp_path: Path):
+    src = tmp_path / 'src'
+    src.mkdir()
+    (src / '.DS_Store').write_bytes(b'\x00\x00\x00\x01Bud1')
+    (src / 'a.txt').write_text('a')
+    assert [p.name for p in collect_files(src)] == ['a.txt']
+    assert [p.name for p in collect_files(src, HarvestOptions(skip_groups=frozenset()))] == ['.DS_Store', 'a.txt']
