@@ -187,3 +187,8 @@ def test_log_and_header_report_the_same_token_total(tmp_path: Path, caplog):
         text = harvest_text(str(src)).text
     header_total = text.splitlines()[1].split('~')[1].split(' ')[0]
     assert f'~{header_total} tokens' in caplog.text
+
+
+def test_python_comments_with_form_feed_line():
+    src = 'x = 1\n\x0c\n# comment\ny = 2\n'
+    assert remove_comments(src, 'py') == 'x = 1\n\x0c\n\ny = 2\n'
