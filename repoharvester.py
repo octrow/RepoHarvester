@@ -84,7 +84,7 @@ def _remove_python_comments(content: str) -> str:
     """Exact removal via the tokenizer; raises TokenError/SyntaxError if the code does not tokenize."""
     comments = [t for t in tokenize.generate_tokens(io.StringIO(content).readline)
                 if t.type == tokenize.COMMENT and not (t.start == (1, 0) and t.string.startswith('#!'))]
-    lines = content.splitlines(keepends=True)
+    lines = io.StringIO(content, newline='\n').readlines()
     for tok in reversed(comments):  # right to left keeps earlier columns valid
         (row, start), (_, end) = tok.start, tok.end
         lines[row - 1] = lines[row - 1][:start] + lines[row - 1][end:]
