@@ -92,8 +92,9 @@ Module: `repoharvester`
 Decides: whether the clone finished, failed or was cancelled.
 In: URL, temp dir, optional `threading.Event`. Out: files in the temp dir.
 Branches:
-- runs `git clone --depth 1 --quiet <repo> <tmp>` in its own session (no controlling terminal, so git cannot prompt for a password or host key, #11), polled every 0.2 s; no submodules;
+- runs `git clone --depth 1 --quiet <repo> <tmp>` in its own session (no controlling terminal, so git cannot prompt for a password or host key, #11), polled every 0.2 s with an overall deadline of `CLONE_TIMEOUT_S` (600 s); no submodules;
 - cancel event set while running → kill the process group (Windows: the process), raise `HarvestCancelled`;
+- deadline passed → kill the process group, `CloneError("git clone of <repo> timed out after 600 s")`;
 - non-zero exit → `CloneError("git clone of <repo> failed: <first stderr line | exit code N>")`.
 Local folder: step is skipped; the cancel event is never read.
 Fails: stops the run; `harvest` has written nothing yet, so an old output file stays. Missing `git` binary raises `FileNotFoundError` (not handled, #2). Ctrl+C in the CLI or closing the GUI does not reach git, which keeps running detached (#12).
@@ -153,7 +154,7 @@ Decides: where the text goes.
 In: `Harvest`. Out: stdout or files.
 Branches:
 - CLI `-o -` → UTF-8 bytes to stdout; no `skipped_files.txt`; skipped non-UTF-8 files appear only in the INFO log;
-- otherwise `output_dir` is created, `<name>_all_files.txt` and `skipped_files.txt` (only the non-UTF-8 files of step 6; empty when none) are overwritten.
+- otherwise `output_dir` is created, `<name>_all_files.txt` and `skipped_files.txt` (only the non-UTF-8 files of step 6; empty when none) are overwritten atomically (temp file `<file>.tmp`, e.g. `<name>_all_files.txt.tmp`, next to the target + `os.replace`; a failed write keeps the old file).
 Both files are overwritten without asking. Two repositories with the same name, or any two runs into one folder, share the file names (#3).
 CLI prints `All files have been written to <path>`; GUI shows `Saved <name>_all_files.txt` and an "Open file" button (`xdg-open` / `open` / `startfile`).
 Fails: write errors (`OSError`) are not caught by the CLI (traceback); the GUI shows them as an error status.

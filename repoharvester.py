@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import tokenize
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ DEFAULT_MAX_SIZE_KB = 1000
 LARGE_FILE_KB = 500
 CHARS_PER_TOKEN = 4  # rough average for code and English text
 CANCEL_POLL_S = 0.2
+CLONE_TIMEOUT_S = 600  # overall deadline for one git clone
 STDOUT = '-'
 DEFAULT_OUTPUT_DIR = Path("output")
 
@@ -261,6 +263,7 @@ def _kill_tree(proc: subprocess.Popen) -> None:
 def _clone(repo: str, dest: Path, cancel: threading.Event | None) -> None:
     log.info("Cloning %s", repo)
     cmd = ['git', 'clone', '--depth', '1', '--quiet', repo, str(dest)]
+    deadline = time.monotonic() + CLONE_TIMEOUT_S
     with subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True, start_new_session=True) as proc:
         while True:
             try:
@@ -270,6 +273,9 @@ def _clone(repo: str, dest: Path, cancel: threading.Event | None) -> None:
                 if cancel and cancel.is_set():
                     _kill_tree(proc)
                     raise HarvestCancelled from None
+                if time.monotonic() > deadline:
+                    _kill_tree(proc)
+                    raise CloneError(f'git clone of {repo} timed out after {CLONE_TIMEOUT_S:g} s') from None
     if proc.returncode:
         raise CloneError(_clone_failure(repo, proc.returncode, stderr))
 
@@ -290,14 +296,23 @@ def harvest_text(repo: str, options: HarvestOptions = DEFAULT_OPTIONS,
     return result
 
 
+def _write_atomic(path: Path, text: str) -> None:
+    """Write via a temp file next to `path` + os.replace: a failed write keeps the old file."""
+    tmp = path.with_name(path.name + '.tmp')
+    try:
+        tmp.write_text(text, encoding='utf-8')
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def harvest(repo: str, options: HarvestOptions = DEFAULT_OPTIONS, cancel: threading.Event | None = None) -> Path:
     """Harvest into <output_dir>/<name>_all_files.txt and return its path; a failed clone keeps the old file."""
     result = harvest_text(repo, options, cancel)
     options.output_dir.mkdir(parents=True, exist_ok=True)
     out_file = options.output_dir / f'{result.name}_all_files.txt'
-    out_file.write_text(result.text, encoding='utf-8')
-    (options.output_dir / 'skipped_files.txt').write_text(''.join(f'{s}\n' for s in result.skipped),
-                                                          encoding='utf-8')
+    _write_atomic(out_file, result.text)
+    _write_atomic(options.output_dir / 'skipped_files.txt', ''.join(f'{s}\n' for s in result.skipped))
     log.info("Wrote %s", out_file)
     return out_file
 

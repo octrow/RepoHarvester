@@ -201,3 +201,30 @@ def test_ds_store_is_skipped_by_default(tmp_path: Path):
     (src / 'a.txt').write_text('a')
     assert [p.name for p in collect_files(src)] == ['a.txt']
     assert [p.name for p in collect_files(src, HarvestOptions(skip_groups=frozenset()))] == ['.DS_Store', 'a.txt']
+
+
+def test_clone_times_out(tmp_path: Path, monkeypatch):
+    import repoharvester
+    monkeypatch.setenv('GIT_SSH_COMMAND', 'sleep 30; true')
+    monkeypatch.setattr(repoharvester, 'CLONE_TIMEOUT_S', 0.5)
+    started = time.monotonic()
+    with pytest.raises(CloneError, match='timed out'):
+        harvest('git@example.invalid:x/y.git', HarvestOptions(tmp_path / 'out'))
+    assert time.monotonic() - started < 5
+
+
+def test_interrupted_write_keeps_previous_output(tmp_path: Path, monkeypatch):
+    import os
+    src = _sample_repo(tmp_path)
+    out = tmp_path / 'out'
+    out_file = harvest(str(src), HarvestOptions(out))
+    good = out_file.read_text()
+
+    def boom(*_):
+        raise OSError('disk full')
+    monkeypatch.setattr(os, 'replace', boom)
+    (src / 'app.py').write_text('changed\n')
+    with pytest.raises(OSError):
+        harvest(str(src), HarvestOptions(out))
+    assert out_file.read_text() == good
+    assert [p.name for p in out.iterdir() if p.suffix == '.tmp'] == []
