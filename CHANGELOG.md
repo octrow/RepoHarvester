@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-05
+
+### Fixed
+- `.DS_Store` is no longer skipped by the `system` group (#6).
+- Python comment removal no longer misaligns rows with the tokenizer on `\f`, `\r` and `\u2028` (#4).
+
+### Changed
+- README is shorter and written in plain language, with the real output as the hero.
+- Added a logic map, a findings plan and a sync test (docs and tests only).
+- CI: bumped the GitHub Actions group (#2).
+
 ## [0.3.1] - 2026-10-16
 
 ### Fixed
@@ -50,7 +61,8 @@ First release on PyPI.
 - Python comments are removed with the tokenizer; string literals are kept in every language.
 - Core rewritten as plain functions with a `HarvestOptions` parameter object; clone failures raise `CloneError`.
 
-[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/octrow/RepoHarvester/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/octrow/RepoHarvester/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/octrow/RepoHarvester/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/octrow/RepoHarvester/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/octrow/RepoHarvester/compare/v0.2.1...v0.2.2
