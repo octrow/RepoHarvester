@@ -51,3 +51,4 @@ LOW (детали в [плане](docs/plans/2026-11-05-logic-map-fixes.md)):
 - [docs/logic-map.md](docs/logic-map.md): карта логики, Known gaps
 - [docs/system-design.md](docs/system-design.md): system design, расчёт нагрузки, отказы, риски
 - Сводка по всем репо: `~/dev/docs/system-design-report-2026-11-05.md`
+- [docs/skills-roadmap-2026-11-05.md](docs/skills-roadmap-2026-11-05.md): навыки с рынка вакансий, 1 пункт: MCP `harvest_repo` поверх `harvest_text()` — после фикса утечки `.env`
