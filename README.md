@@ -9,7 +9,8 @@
 
 **English** | [Русский](README.ru.md)
 
-Clone a git repository (or point at a local folder) and get all of its text files in one file, ready to paste into ChatGPT or Claude. A command-line tool plus an optional GUI, no runtime dependencies.
+Point it at a git URL or a local folder. You get all text files in one file, ready to paste into ChatGPT or Claude.
+A command-line tool with an optional GUI. No runtime dependencies.
 
 ```shell
 uvx repoharvester https://github.com/psf/requests
@@ -68,7 +69,7 @@ repoharvester <repo-url-or-folder> [options]
 | `-o`, `--output-dir` | Output directory (default `output`), or `-` to print to stdout |
 | `--log FILE` | Also write the log to a file |
 
-Groups: `archive`, `audio`, `cache_files`, `certificate`, `compiled_code`, `configuration`, `database`, `executables`, `font`, `log_files`, `media`, `node_modules`, `office`, `package_locks`, `system`, `temporary`, `video`, `virtual_env`. See `EXTENSION_GROUPS`, `FILENAME_GROUPS` and `FOLDER_GROUPS` in `repoharvester.py`.
+File groups and glob rules: see [docs/filters.md](docs/filters.md).
 
 Example:
 ```shell
@@ -77,7 +78,6 @@ repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-
 # only Python and Markdown, no tests, straight to the clipboard
 repoharvester . --include '*.py,*.md' --exclude-glob 'tests/*' -o - | xclip -selection clipboard   # macOS: | pbcopy
 ```
-Globs match the path relative to the repo root or the bare file name; `*` also crosses `/`, so write `test_*.py` or `docs/*` (not `**/test_*.py` or `docs/`). Output to stdout is always UTF-8. They apply on top of the groups and `.gitignore`.
 
 ## GUI
 ```shell
@@ -96,7 +96,7 @@ On Linux the project prefers the system Python: uv's bundled builds ship Tk with
 - [gitingest](https://github.com/coderamp-labs/gitingest) (Python): also has a website where you swap `hub` for `ingest` in a GitHub URL.
 - [files-to-prompt](https://github.com/simonw/files-to-prompt) (Python): local files and folders, no cloning.
 
-RepoHarvester is a single standard-library module: nothing to install besides Python and git, plus a small desktop GUI if you prefer clicking.
+RepoHarvester is one standard-library module. It needs only Python and git.
 
 ## Development
 See [CONTRIBUTING.md](CONTRIBUTING.md).

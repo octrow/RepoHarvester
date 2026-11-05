@@ -9,7 +9,8 @@
 
 [English](README.md) | **Русский**
 
-Клонирует git-репозиторий (или берёт локальную папку) и собирает все его текстовые файлы в один, который можно сразу вставить в ChatGPT или Claude. Консольная утилита и необязательный GUI, зависимостей нет.
+Дайте git-адрес или локальную папку. Все текстовые файлы соберутся в один, его можно сразу вставить в ChatGPT или Claude.
+Консольная утилита и необязательный GUI. Зависимостей нет.
 
 ```shell
 uvx repoharvester https://github.com/psf/requests
@@ -35,7 +36,7 @@ requests.api
 ...
 ### end of file
 ```
-Список показывает модели структуру репозитория, а вам — какие файлы съедают контекст. Токены оценочные (~4 символа на токен). Файлы не в UTF-8 перечислены в `skipped_files.txt` рядом с результатом.
+Список показывает модели структуру репозитория. Вам он показывает, какие файлы съедают контекст. Токены оценочные (~4 символа на токен). Файлы не в UTF-8 перечислены в `skipped_files.txt` рядом с результатом.
 
 ## Возможности
 - Принимает SSH/HTTPS-адреса git (неглубокий клон во временную папку) или локальные папки.
@@ -68,7 +69,7 @@ repoharvester <repo-url-or-folder> [options]
 | `-o`, `--output-dir` | Папка для результата (по умолчанию `output`) или `-`, чтобы печатать в stdout |
 | `--log FILE` | Дополнительно писать лог в файл |
 
-Группы: `archive`, `audio`, `cache_files`, `certificate`, `compiled_code`, `configuration`, `database`, `executables`, `font`, `log_files`, `media`, `node_modules`, `office`, `package_locks`, `system`, `temporary`, `video`, `virtual_env`. Подробности в `EXTENSION_GROUPS`, `FILENAME_GROUPS` и `FOLDER_GROUPS` в `repoharvester.py`.
+Группы файлов и правила масок: [docs/filters.ru.md](docs/filters.ru.md).
 
 Пример:
 ```shell
@@ -77,7 +78,6 @@ repoharvester git@github.com:username/repo.git -r --no-skip configuration --max-
 # только Python и Markdown, без тестов, сразу в буфер обмена
 repoharvester . --include '*.py,*.md' --exclude-glob 'tests/*' -o - | xclip -selection clipboard   # macOS: | pbcopy
 ```
-Маски сравниваются с путём от корня репозитория или с именем файла; `*` захватывает и `/`, поэтому пишите `test_*.py` или `docs/*` (а не `**/test_*.py` или `docs/`). Вывод в stdout всегда в UTF-8. Они применяются поверх групп и `.gitignore`.
 
 ## GUI
 ```shell
@@ -96,7 +96,7 @@ uv run --extra gui repoharvester-gui      # из клона репозитори
 - [gitingest](https://github.com/coderamp-labs/gitingest) (Python): есть ещё сайт, на котором достаточно заменить `hub` на `ingest` в адресе GitHub.
 - [files-to-prompt](https://github.com/simonw/files-to-prompt) (Python): работает с локальными файлами и папками, без клонирования.
 
-RepoHarvester — один модуль на стандартной библиотеке: кроме Python и git ничего ставить не нужно, а для тех, кому удобнее мышкой, есть небольшой GUI.
+RepoHarvester - один модуль на стандартной библиотеке. Нужны только Python и git.
 
 ## Разработка
 См. [CONTRIBUTING.ru.md](CONTRIBUTING.ru.md).
